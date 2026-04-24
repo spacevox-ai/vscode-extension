@@ -1,0 +1,177 @@
+{
+  "name": "work-studio-ai",
+  "displayName": "work.studio AI",
+  "description": "AI-powered code completion, chat, and governance for enterprise teams",
+  "version": "0.1.0",
+  "publisher": "workstudio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workstudio/vscode-extension"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Programming Languages",
+    "Chat",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "code completion",
+    "copilot",
+    "chat",
+    "work.studio",
+    "mcp",
+    "enterprise",
+    "governance"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "workstudio.chat",
+        "fullName": "work.studio AI",
+        "name": "workstudio",
+        "description": "AI assistant for coding, debugging, and code explanation",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "explain",
+            "description": "Explain the selected code or concept"
+          },
+          {
+            "name": "fix",
+            "description": "Fix bugs or issues in the selected code"
+          },
+          {
+            "name": "test",
+            "description": "Generate tests for the selected code"
+          },
+          {
+            "name": "docs",
+            "description": "Generate documentation for the selected code"
+          },
+          {
+            "name": "refactor",
+            "description": "Suggest refactoring improvements"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "workstudio.login",
+        "title": "work.studio: Sign In"
+      },
+      {
+        "command": "workstudio.logout",
+        "title": "work.studio: Sign Out"
+      },
+      {
+        "command": "workstudio.showStatus",
+        "title": "work.studio: Show Connection Status"
+      },
+      {
+        "command": "workstudio.toggleCompletion",
+        "title": "work.studio: Toggle Code Completion"
+      },
+      {
+        "command": "workstudio.openChat",
+        "title": "work.studio: Open Chat"
+      }
+    ],
+    "configuration": {
+      "title": "work.studio AI",
+      "properties": {
+        "workstudio.environment": {
+          "type": "string",
+          "enum": ["local", "staging", "production"],
+          "default": "local",
+          "description": "Environment preset. Overrides serverUrl and authUrl with environment-specific defaults.",
+          "enumDescriptions": [
+            "Local development (ws://localhost:8102, https://auth.spacevox.local)",
+            "Staging (wss://api.stage.work.studio, https://auth.stage.work.studio)",
+            "Production (wss://api.work.studio, https://auth.work.studio)"
+          ]
+        },
+        "workstudio.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "MCP server WebSocket URL. Leave empty to use environment preset. Examples: ws://localhost:8102/ws/mcp (local), wss://api.work.studio/ws/mcp (prod)"
+        },
+        "workstudio.authUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Authentication server URL (Keycloak). Leave empty to use environment preset."
+        },
+        "workstudio.agentId": {
+          "type": "string",
+          "default": "",
+          "description": "Agent ID for chat and completion. Leave empty to use the default VS Code agent (019d5a01-1001-7001-8001-000000000020)."
+        },
+        "workstudio.completion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable AI code completion"
+        },
+        "workstudio.completion.debounceMs": {
+          "type": "number",
+          "default": 300,
+          "description": "Debounce delay in milliseconds before requesting completion"
+        },
+        "workstudio.completion.maxTokens": {
+          "type": "number",
+          "default": 256,
+          "description": "Maximum tokens for completion suggestions"
+        },
+        "workstudio.telemetry.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable usage analytics for governance"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "workstudio.triggerCompletion",
+        "key": "ctrl+shift+space",
+        "mac": "cmd+shift+space",
+        "when": "editorTextFocus && !editorReadonly"
+      },
+      {
+        "command": "workstudio.openChat",
+        "key": "ctrl+alt+w",
+        "mac": "cmd+alt+w"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
+    "watch": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package --allow-missing-repository",
+    "publish": "vsce publish",
+    "install-local": "code --install-extension work-studio-ai-*.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "esbuild": "^0.19.8",
+    "eslint": "^8.55.0",
+    "typescript": "^5.3.2",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "keytar": "^7.9.0"
+  }
+}

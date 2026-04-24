@@ -1,0 +1,166 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on v0.1.0, v1.0.0, etc.
+
+permissions:
+  contents: write  # Required for creating releases
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Install extension dependencies
+        run: npm ci
+
+      - name: Compile extension
+        run: npm run compile
+
+      - name: Package VSIX
+        run: npm run package
+
+      - name: Rename VSIX with version
+        run: |
+          mv work-studio-ai-*.vsix work-studio-ai-${{ steps.version.outputs.VERSION }}.vsix
+
+      # Build native installers
+      - name: Install installer dependencies
+        run: |
+          cd installer
+          npm ci
+
+      - name: Create dist directory
+        run: mkdir -p dist/installers
+
+      - name: Build Windows installer
+        run: |
+          cd installer
+          npm run build:win
+          mv ../dist/installers/install-workstudio-win.exe ../dist/installers/install-workstudio-${{ steps.version.outputs.VERSION }}-win.exe
+
+      - name: Build macOS installer (x64)
+        run: |
+          cd installer
+          npm run build:mac
+          mv ../dist/installers/install-workstudio-macos ../dist/installers/install-workstudio-${{ steps.version.outputs.VERSION }}-macos-x64
+
+      - name: Build macOS installer (ARM64)
+        run: |
+          cd installer
+          npm run build:mac-arm
+          mv ../dist/installers/install-workstudio-macos-arm64 ../dist/installers/install-workstudio-${{ steps.version.outputs.VERSION }}-macos-arm64
+
+      - name: Build Linux installer
+        run: |
+          cd installer
+          npm run build:linux
+          mv ../dist/installers/install-workstudio-linux ../dist/installers/install-workstudio-${{ steps.version.outputs.VERSION }}-linux
+
+      # Create checksums
+      - name: Generate checksums
+        run: |
+          cd dist/installers
+          sha256sum * > checksums-${{ steps.version.outputs.VERSION }}.txt
+          cd ../..
+          sha256sum work-studio-ai-*.vsix >> dist/installers/checksums-${{ steps.version.outputs.VERSION }}.txt
+          mv dist/installers/checksums-${{ steps.version.outputs.VERSION }}.txt .
+
+      # Create GitHub Release
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## work.studio AI VS Code Extension v${{ steps.version.outputs.VERSION }}
+            
+            ### Installation
+            
+            #### Option 1: VS Code Marketplace
+            Search for "work.studio AI" in VS Code Extensions panel.
+            
+            #### Option 2: Download VSIX
+            1. Download `work-studio-ai-${{ steps.version.outputs.VERSION }}.vsix`
+            2. In VS Code: Extensions → ⋯ → Install from VSIX...
+            3. Select the downloaded file
+            
+            #### Option 3: One-Click Installer
+            
+            **Windows:**
+            ```powershell
+            # Download and run
+            Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.VERSION }}/install-workstudio-${{ steps.version.outputs.VERSION }}-win.exe" -OutFile install-workstudio.exe
+            .\install-workstudio.exe
+            ```
+            
+            **macOS:**
+            ```bash
+            curl -L -o install-workstudio https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.VERSION }}/install-workstudio-${{ steps.version.outputs.VERSION }}-macos-x64
+            chmod +x install-workstudio
+            ./install-workstudio
+            ```
+            
+            **Linux:**
+            ```bash
+            curl -L -o install-workstudio https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.VERSION }}/install-workstudio-${{ steps.version.outputs.VERSION }}-linux
+            chmod +x install-workstudio
+            ./install-workstudio
+            ```
+            
+            ### Checksums
+            See `checksums-${{ steps.version.outputs.VERSION }}.txt` for SHA256 verification.
+            
+          files: |
+            work-studio-ai-${{ steps.version.outputs.VERSION }}.vsix
+            dist/installers/install-workstudio-${{ steps.version.outputs.VERSION }}-win.exe
+            dist/installers/install-workstudio-${{ steps.version.outputs.VERSION }}-macos-x64
+            dist/installers/install-workstudio-${{ steps.version.outputs.VERSION }}-macos-arm64
+            dist/installers/install-workstudio-${{ steps.version.outputs.VERSION }}-linux
+            checksums-${{ steps.version.outputs.VERSION }}.txt
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Optional: Publish to VS Code Marketplace
+  publish-marketplace:
+    runs-on: ubuntu-latest
+    needs: build-and-release
+    if: ${{ !contains(github.ref, 'alpha') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc') }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Publish to Marketplace
+        run: npx vsce publish -p ${{ secrets.VSCE_PAT }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        continue-on-error: true  # Don't fail release if marketplace publish fails

@@ -1,0 +1,36 @@
+{
+  "name": "work-studio-installer",
+  "version": "1.0.0",
+  "description": "Installer for work.studio AI VS Code Extension",
+  "main": "install.js",
+  "bin": {
+    "install-workstudio": "./install.js"
+  },
+  "scripts": {
+    "build": "npm run build:win && npm run build:mac && npm run build:linux",
+    "build:win": "pkg install.js -t node18-win-x64 -o ../dist/installers/install-workstudio-win.exe",
+    "build:mac": "pkg install.js -t node18-macos-x64 -o ../dist/installers/install-workstudio-macos",
+    "build:mac-arm": "pkg install.js -t node18-macos-arm64 -o ../dist/installers/install-workstudio-macos-arm64",
+    "build:linux": "pkg install.js -t node18-linux-x64 -o ../dist/installers/install-workstudio-linux"
+  },
+  "pkg": {
+    "scripts": "install.js",
+    "targets": [
+      "node18-win-x64",
+      "node18-macos-x64",
+      "node18-linux-x64"
+    ],
+    "outputPath": "../dist/installers"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "keywords": [
+    "vscode",
+    "extension",
+    "installer",
+    "work.studio"
+  ],
+  "author": "SpaceVox Inc.",
+  "license": "MIT"
+}
