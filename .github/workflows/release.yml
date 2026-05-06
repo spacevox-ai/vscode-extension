@@ -13,11 +13,10 @@ on:
 
 permissions:
   contents: write  # Required for creating releases
-  id-token: write  # Required for AWS OIDC
 
 env:
-  CDN_BUCKET: downloads-spacevox-com
-  AWS_REGION: us-west-2
+  R2_BUCKET: downloads-work-studio
+  CDN_URL: https://downloads.work.studio
 
 jobs:
   build-and-release:
@@ -153,29 +152,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Upload to CDN (S3) for downloads.work.studio
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+      # Upload to CDN (Cloudflare R2) for downloads.work.studio
+      - name: Install Wrangler
+        run: npm install -g wrangler
 
-      - name: Upload to CDN
+      - name: Upload to Cloudflare R2
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
           PRERELEASE=${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
           
-          # Create version directory
-          aws s3 cp work-studio-ai-${VERSION}.vsix s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
-          aws s3 cp dist/installers/install-workstudio-${VERSION}-win.exe s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
-          aws s3 cp dist/installers/install-workstudio-${VERSION}-macos-x64 s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
-          aws s3 cp dist/installers/install-workstudio-${VERSION}-macos-arm64 s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
-          aws s3 cp dist/installers/install-workstudio-${VERSION}-linux s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
-          aws s3 cp checksums-${VERSION}.txt s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
+          # Upload VSIX to version directory
+          wrangler r2 object put ${{ env.R2_BUCKET }}/vscode/v${VERSION}/work-studio-ai-${VERSION}.vsix --file work-studio-ai-${VERSION}.vsix
+          
+          # Upload installers
+          wrangler r2 object put ${{ env.R2_BUCKET }}/vscode/v${VERSION}/install-workstudio-${VERSION}-win.exe --file dist/installers/install-workstudio-${VERSION}-win.exe
+          wrangler r2 object put ${{ env.R2_BUCKET }}/vscode/v${VERSION}/install-workstudio-${VERSION}-macos-x64 --file dist/installers/install-workstudio-${VERSION}-macos-x64
+          wrangler r2 object put ${{ env.R2_BUCKET }}/vscode/v${VERSION}/install-workstudio-${VERSION}-macos-arm64 --file dist/installers/install-workstudio-${VERSION}-macos-arm64
+          wrangler r2 object put ${{ env.R2_BUCKET }}/vscode/v${VERSION}/install-workstudio-${VERSION}-linux --file dist/installers/install-workstudio-${VERSION}-linux
+          wrangler r2 object put ${{ env.R2_BUCKET }}/vscode/v${VERSION}/checksums-${VERSION}.txt --file checksums-${VERSION}.txt
           
           # Create manifest for website download page
-          CDN_URL="https://downloads.work.studio"
           cat > vscode-latest.json << EOF
           {
             "version": "${VERSION}",
@@ -183,19 +182,19 @@ jobs:
             "prerelease": ${PRERELEASE},
             "changelog": "https://github.com/${{ github.repository }}/releases/tag/v${VERSION}",
             "assets": {
-              "vsix": "${CDN_URL}/vscode/v${VERSION}/work-studio-ai-${VERSION}.vsix",
-              "win_exe": "${CDN_URL}/vscode/v${VERSION}/install-workstudio-${VERSION}-win.exe",
-              "macos_x64": "${CDN_URL}/vscode/v${VERSION}/install-workstudio-${VERSION}-macos-x64",
-              "macos_arm64": "${CDN_URL}/vscode/v${VERSION}/install-workstudio-${VERSION}-macos-arm64",
-              "linux": "${CDN_URL}/vscode/v${VERSION}/install-workstudio-${VERSION}-linux"
+              "vsix": "${{ env.CDN_URL }}/vscode/v${VERSION}/work-studio-ai-${VERSION}.vsix",
+              "win_exe": "${{ env.CDN_URL }}/vscode/v${VERSION}/install-workstudio-${VERSION}-win.exe",
+              "macos_x64": "${{ env.CDN_URL }}/vscode/v${VERSION}/install-workstudio-${VERSION}-macos-x64",
+              "macos_arm64": "${{ env.CDN_URL }}/vscode/v${VERSION}/install-workstudio-${VERSION}-macos-arm64",
+              "linux": "${{ env.CDN_URL }}/vscode/v${VERSION}/install-workstudio-${VERSION}-linux"
             }
           }
           EOF
           
-          aws s3 cp vscode-latest.json s3://${{ env.CDN_BUCKET }}/vscode/latest.json --content-type "application/json"
+          wrangler r2 object put ${{ env.R2_BUCKET }}/vscode/latest.json --file vscode-latest.json --content-type "application/json"
           
-          echo "✅ Uploaded to CDN: ${CDN_URL}/vscode/v${VERSION}/"
-          echo "✅ Manifest updated: ${CDN_URL}/vscode/latest.json"
+          echo "✅ Uploaded to R2: ${{ env.CDN_URL }}/vscode/v${VERSION}/"
+          echo "✅ Manifest updated: ${{ env.CDN_URL }}/vscode/latest.json"
 
   # Optional: Publish to VS Code Marketplace
   publish-marketplace:
