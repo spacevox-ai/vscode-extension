@@ -3,6 +3,12 @@
  * 
  * Provides AI-powered code completion, chat, and governance through the
  * work.studio MCP (Model Context Protocol) server.
+ * 
+ * Features:
+ * - Custom Chat UI with sidebar (work.studio branding)
+ * - Tool system for file/terminal/editor operations
+ * - Streaming AI responses with tool execution
+ * - GitHub Copilot chat participant integration
  */
 
 import * as vscode from 'vscode';
@@ -13,15 +19,23 @@ import { WorkstudioChatParticipant } from './chat/ChatParticipant';
 import { StatusBarManager } from './ui/StatusBar';
 import { Logger } from './utils/Logger';
 import { getServerUrl, getEnvironmentName, logConfiguration } from './config/EnvironmentConfig';
+import { ToolRegistry, registerAllTools } from './tools';
+import { ChatPanel, ChatSidebarProvider } from './webview';
+import { BrandingService } from './config/BrandingService';
 
 let mcpClient: McpClient | undefined;
 let authService: AuthService | undefined;
 let completionProvider: WorkstudioCompletionProvider | undefined;
 let chatParticipant: WorkstudioChatParticipant | undefined;
 let statusBar: StatusBarManager | undefined;
+let toolRegistry: ToolRegistry | undefined;
+let chatSidebarProvider: ChatSidebarProvider | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
     Logger.info('work.studio AI extension activating...');
+
+    // Initialize branding service first
+    await BrandingService.getInstance().initialize(context);
 
     // Initialize services
     authService = new AuthService(context);
@@ -30,18 +44,42 @@ export async function activate(context: vscode.ExtensionContext) {
     completionProvider = new WorkstudioCompletionProvider(mcpClient);
     chatParticipant = new WorkstudioChatParticipant(mcpClient);
 
+    // Initialize tool system
+    toolRegistry = ToolRegistry.getInstance();
+    registerAllTools(toolRegistry);
+    Logger.info(`Registered ${toolRegistry.getAllTools().length} tools`);
+
+    // Initialize custom chat sidebar (requires authService)
+    chatSidebarProvider = new ChatSidebarProvider(context.extensionUri, toolRegistry, authService);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(
+            ChatSidebarProvider.viewType,
+            chatSidebarProvider,
+            { webviewOptions: { retainContextWhenHidden: true } }
+        )
+    );
+
     // Register chat participant
     chatParticipant.register(context);
 
     // Register commands
+    Logger.info('Registering commands...');
     context.subscriptions.push(
-        vscode.commands.registerCommand('workstudio.login', () => handleLogin()),
-        vscode.commands.registerCommand('workstudio.logout', () => handleLogout()),
+        vscode.commands.registerCommand('workstudio.login', () => {
+            Logger.info('workstudio.login command triggered');
+            return handleLogin();
+        }),
+        vscode.commands.registerCommand('workstudio.logout', () => {
+            Logger.info('workstudio.logout command triggered');
+            return handleLogout();
+        }),
         vscode.commands.registerCommand('workstudio.showStatus', () => showStatus()),
         vscode.commands.registerCommand('workstudio.toggleCompletion', () => toggleCompletion()),
         vscode.commands.registerCommand('workstudio.triggerCompletion', () => triggerCompletion()),
-        vscode.commands.registerCommand('workstudio.openChat', () => openChat())
+        vscode.commands.registerCommand('workstudio.openChat', () => openChat()),
+        vscode.commands.registerCommand('workstudio.openChatPanel', () => openChatPanel(context))
     );
+    Logger.info('Commands registered');
 
     // Register completion provider for all languages
     context.subscriptions.push(
@@ -75,6 +113,8 @@ export function deactivate() {
     mcpClient?.disconnect();
     chatParticipant?.dispose();
     statusBar?.dispose();
+    chatSidebarProvider?.dispose();
+    ChatPanel.currentPanel?.dispose();
 
     Logger.info('work.studio AI extension deactivated');
 }
@@ -84,6 +124,7 @@ export function deactivate() {
 // ============================================================================
 
 async function handleLogin(): Promise<void> {
+    Logger.info('handleLogin called');
     if (!authService) {
         vscode.window.showErrorMessage('work.studio: Auth service not initialized');
         return;
@@ -91,8 +132,11 @@ async function handleLogin(): Promise<void> {
 
     try {
         statusBar?.setStatus('connecting', 'Signing in...');
+        Logger.info('Starting login flow...');
         
         const token = await authService.login();
+        
+        Logger.info(`Login completed, token received: ${token ? 'yes' : 'no'}`);
         
         if (token) {
             await connectToServer(token);
@@ -118,16 +162,17 @@ async function handleLogout(): Promise<void> {
 }
 
 function showStatus(): void {
-    const connected = mcpClient?.isConnected() ?? false;
     const authenticated = authService?.isAuthenticated() ?? false;
     const config = vscode.workspace.getConfiguration('workstudio');
+    const workStudioConfig = vscode.workspace.getConfiguration('workStudio');
     const completionEnabled = config.get<boolean>('completion.enabled', true);
+    const aiEndpoint = workStudioConfig.get<string>('aiEndpoint', 'http://localhost:8102/api/v1/workflow/ai-runtime/mcp');
 
     const statusItems = [
-        `Connection: ${connected ? '✅ Connected' : '❌ Disconnected'}`,
+        `Mode: HTTP/SSE (Sidebar Chat)`,
         `Authentication: ${authenticated ? '✅ Signed in' : '❌ Not signed in'}`,
         `Code Completion: ${completionEnabled ? '✅ Enabled' : '⏸️ Disabled'}`,
-        `Server: ${config.get<string>('serverUrl', 'Not configured')}`
+        `AI Endpoint: ${aiEndpoint}`
     ];
 
     vscode.window.showInformationMessage(
@@ -165,6 +210,15 @@ async function openChat(): Promise<void> {
     });
 }
 
+function openChatPanel(context: vscode.ExtensionContext): void {
+    if (!toolRegistry) {
+        vscode.window.showErrorMessage('work.studio: Tool system not initialized');
+        return;
+    }
+    
+    ChatPanel.createOrShow(context.extensionUri, toolRegistry);
+}
+
 // ============================================================================
 // Connection Management
 // ============================================================================
@@ -178,7 +232,27 @@ async function tryAutoConnect(): Promise<void> {
         const token = await authService.getStoredToken();
         if (token && authService.isTokenValid(token)) {
             Logger.info('Found valid stored token, auto-connecting...');
+            
+            // Check if we have tenant info, if not resolve it
+            const tenantId = await authService.getTenantId();
+            if (!tenantId) {
+                Logger.info('No tenant ID stored, resolving platform identity...');
+                await authService.resolvePlatformIdentityPublic(token);
+            }
+            
             await connectToServer(token);
+        } else {
+            // No valid token - prompt user to sign in
+            Logger.info('No valid token found, prompting for sign in...');
+            const action = await vscode.window.showInformationMessage(
+                'work.studio: Sign in to enable AI features',
+                'Sign In',
+                'Later'
+            );
+            
+            if (action === 'Sign In') {
+                await handleLogin();
+            }
         }
     } catch (error) {
         Logger.warn('Auto-connect failed, user will need to sign in manually', error);
@@ -186,10 +260,6 @@ async function tryAutoConnect(): Promise<void> {
 }
 
 async function connectToServer(token: string): Promise<void> {
-    if (!mcpClient) {
-        throw new Error('MCP client not initialized');
-    }
-
     // Get server URL from environment config
     const serverUrl = getServerUrl();
     const envName = getEnvironmentName();
@@ -197,15 +267,31 @@ async function connectToServer(token: string): Promise<void> {
     // Log configuration for debugging
     logConfiguration();
 
+    // Get tenant/env from AuthService for RLS context
+    const tenantId = await authService?.getTenantId();
+    const envId = await authService?.getEnvId();
+    Logger.info(`Using tenant: ${tenantId}, env: ${envId}`);
+
     statusBar?.setStatus('connecting', `Connecting to ${envName}...`);
     Logger.info(`Connecting to ${envName}: ${serverUrl}`);
 
     try {
-        await mcpClient.connect(serverUrl, token);
-        await mcpClient.initialize();
+        // WebSocket MCP client disabled - using HTTP/SSE only for sidebar chat
+        // await mcpClient.connect(serverUrl, token, tenantId || undefined, envId || undefined);
+        // await mcpClient.initialize();
+        
+        // Convert WebSocket URL to HTTP URL for SSE sidebar chat
+        const httpUrl = serverUrl
+            .replace('ws://', 'http://')
+            .replace('wss://', 'https://')
+            .replace('/ws/mcp', '');
+        
+        // SSE client for native chat participant (if used)
+        chatParticipant?.initializeSseClient(httpUrl, token);
+        Logger.info(`HTTP/SSE endpoint ready: ${httpUrl}`);
         
         statusBar?.setStatus('connected', `Connected (${envName})`);
-        Logger.info(`Connected to work.studio MCP server (${envName})`);
+        Logger.info(`Connected to work.studio (${envName}) - HTTP/SSE mode`);
     } catch (error) {
         statusBar?.setStatus('error', 'Connection failed');
         throw error;
@@ -213,18 +299,11 @@ async function connectToServer(token: string): Promise<void> {
 }
 
 function handleConfigurationChange(): void {
-    Logger.info('Configuration changed, reconnecting...');
+    Logger.info('Configuration changed');
     
-    // If connected, reconnect with new configuration
-    if (mcpClient?.isConnected()) {
-        const token = authService?.getStoredToken();
-        if (token) {
-            mcpClient.disconnect();
-            connectToServer(token as unknown as string).catch(err => {
-                Logger.error('Reconnect failed', err);
-            });
-        }
-    }
+    // In HTTP/SSE mode, no persistent connection to manage
+    // Just update the status bar
+    updateStatusBar();
 }
 
 function updateStatusBar(): void {
@@ -232,10 +311,10 @@ function updateStatusBar(): void {
         return;
     }
 
-    if (mcpClient?.isConnected()) {
-        statusBar.setStatus('connected', 'work.studio: Connected');
-    } else if (authService?.isAuthenticated()) {
-        statusBar.setStatus('disconnected', 'work.studio: Disconnected');
+    // In HTTP/SSE mode, "connected" means authenticated
+    if (authService?.isAuthenticated()) {
+        const envName = getEnvironmentName();
+        statusBar.setStatus('connected', `work.studio: Ready (${envName})`);
     } else {
         statusBar.setStatus('inactive', 'work.studio: Not signed in');
     }

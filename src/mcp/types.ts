@@ -88,7 +88,7 @@ export interface McpToolCallParams {
  * MCP content item
  */
 export interface McpContentItem {
-    type: 'text' | 'image' | 'resource';
+    type: 'text' | 'image' | 'resource' | 'thinking';
     text?: string;
     data?: string;
     mimeType?: string;

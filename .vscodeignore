@@ -2,21 +2,27 @@
 **
 
 # Include only what we need
-!dist/**
+!dist/extension.js
 !package.json
 !README.md
 !CHANGELOG.md
 !LICENSE
 !images/**/*.png
 !images/**/*.svg
+!media/**/*.svg
+!brand.config.json
 
 # Exclude dev/build files
 .vscode/**
 src/**
 node_modules/**
+installer/**
+scripts/**
+docs/**
 *.ts
 *.map
 .gitignore
 tsconfig.json
 package-lock.json
 *.vsix
+dist/installers/**

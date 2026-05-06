@@ -16,12 +16,21 @@ const STATUS_ICONS: Record<StatusType, string> = {
     inactive: '$(circle-outline)'
 };
 
+// Background colors for better visibility
+const STATUS_BACKGROUNDS: Record<StatusType, vscode.ThemeColor | undefined> = {
+    connected: new vscode.ThemeColor('statusBarItem.prominentBackground'),
+    connecting: undefined,
+    disconnected: new vscode.ThemeColor('statusBarItem.warningBackground'),
+    error: new vscode.ThemeColor('statusBarItem.errorBackground'),
+    inactive: undefined
+};
+
 const STATUS_COLORS: Record<StatusType, vscode.ThemeColor | undefined> = {
     connected: new vscode.ThemeColor('statusBarItem.prominentForeground'),
     connecting: undefined,
     disconnected: new vscode.ThemeColor('statusBarItem.warningForeground'),
     error: new vscode.ThemeColor('statusBarItem.errorForeground'),
-    inactive: undefined
+    inactive: new vscode.ThemeColor('descriptionForeground')
 };
 
 export class StatusBarManager {
@@ -46,19 +55,16 @@ export class StatusBarManager {
         
         const icon = STATUS_ICONS[status];
         const color = STATUS_COLORS[status];
+        const background = STATUS_BACKGROUNDS[status];
         
         this.statusBarItem.text = `${icon} work.studio`;
         this.statusBarItem.tooltip = tooltip;
-        this.statusBarItem.backgroundColor = status === 'error' 
-            ? new vscode.ThemeColor('statusBarItem.errorBackground')
-            : undefined;
         
-        // Update color
-        if (color) {
-            this.statusBarItem.color = color;
-        } else {
-            this.statusBarItem.color = undefined;
-        }
+        // Apply background color for better visibility
+        this.statusBarItem.backgroundColor = background;
+        
+        // Update foreground color
+        this.statusBarItem.color = color;
     }
 
     /**

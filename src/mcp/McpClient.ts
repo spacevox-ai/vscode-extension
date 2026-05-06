@@ -37,7 +37,7 @@ export class McpClient {
     /**
      * Connect to the MCP server
      */
-    async connect(serverUrl: string, token: string): Promise<void> {
+    async connect(serverUrl: string, token: string, tenantId?: string, envId?: string): Promise<void> {
         this.serverUrl = serverUrl;
         this.token = token;
 
@@ -47,14 +47,21 @@ export class McpClient {
                 const url = new URL(serverUrl);
                 url.searchParams.set('token', token);
 
-                Logger.info(`Connecting to MCP server: ${serverUrl}`);
+                Logger.info(`Connecting to MCP server: ${serverUrl} (tenant: ${tenantId}, env: ${envId})`);
 
-                this.ws = new WebSocket(url.toString(), {
-                    headers: {
-                        'X-MCP-Client': 'vscode',
-                        'X-MCP-Client-Version': vscode.extensions.getExtension('workstudio.work-studio-ai')?.packageJSON.version || '0.1.0'
-                    }
-                });
+                // Build headers with tenant/env for RLS context
+                const headers: Record<string, string> = {
+                    'X-MCP-Client': 'vscode',
+                    'X-MCP-Client-Version': vscode.extensions.getExtension('workstudio.work-studio-ai')?.packageJSON.version || '0.1.0'
+                };
+                if (tenantId) {
+                    headers['X-SELECTED-TENANT'] = tenantId;
+                }
+                if (envId) {
+                    headers['X-SELECTED-ENV'] = envId;
+                }
+
+                this.ws = new WebSocket(url.toString(), { headers });
 
                 this.ws.on('open', () => {
                     Logger.info('WebSocket connection established');
@@ -199,7 +206,7 @@ export class McpClient {
         context?: string;
         history?: string;
         references?: string[];
-    }): Promise<{ content: string | null; error?: string }> {
+    }): Promise<{ content: string | null; thinking?: string; error?: string }> {
         try {
             const result = await this.callTool('chat', {
                 message: params.message,
@@ -209,12 +216,37 @@ export class McpClient {
                 agentId: getAgentId(),  // Include agent ID from config
             });
 
+            Logger.debug('MCP chat response', { 
+                contentItems: result.content?.length,
+                isError: result.isError,
+                types: result.content?.map(c => c.type)
+            });
+
             if (result.isError) {
                 const errorText = result.content?.[0]?.text || 'Unknown error';
                 return { content: null, error: errorText };
             }
 
-            return { content: result.content?.[0]?.text || null };
+            // Parse response - may contain thinking (type="thinking") and text (type="text")
+            let thinking: string | undefined;
+            let content: string | null = null;
+
+            for (const item of result.content || []) {
+                Logger.debug('Content item', { type: item.type, textLength: item.text?.length });
+                if (item.type === 'thinking' && item.text) {
+                    thinking = item.text;
+                } else if (item.type === 'text' && item.text) {
+                    content = item.text;
+                }
+            }
+
+            Logger.info('Parsed chat response', { 
+                hasThinking: !!thinking, 
+                thinkingLength: thinking?.length,
+                contentLength: content?.length 
+            });
+
+            return { content, thinking };
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             return { content: null, error: message };

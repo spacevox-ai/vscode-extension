@@ -4,9 +4,20 @@ on:
   push:
     tags:
       - 'v*'  # Triggers on v0.1.0, v1.0.0, etc.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write  # Required for creating releases
+  id-token: write  # Required for AWS OIDC
+
+env:
+  CDN_BUCKET: downloads-spacevox-com
+  AWS_REGION: us-west-2
 
 jobs:
   build-and-release:
@@ -24,7 +35,12 @@ jobs:
 
       - name: Get version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Install extension dependencies
         run: npm ci
@@ -136,6 +152,50 @@ jobs:
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Upload to CDN (S3) for downloads.work.studio
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload to CDN
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          PRERELEASE=${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          
+          # Create version directory
+          aws s3 cp work-studio-ai-${VERSION}.vsix s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
+          aws s3 cp dist/installers/install-workstudio-${VERSION}-win.exe s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
+          aws s3 cp dist/installers/install-workstudio-${VERSION}-macos-x64 s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
+          aws s3 cp dist/installers/install-workstudio-${VERSION}-macos-arm64 s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
+          aws s3 cp dist/installers/install-workstudio-${VERSION}-linux s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
+          aws s3 cp checksums-${VERSION}.txt s3://${{ env.CDN_BUCKET }}/vscode/v${VERSION}/
+          
+          # Create manifest for website download page
+          CDN_URL="https://downloads.work.studio"
+          cat > vscode-latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "date": "$(date +%Y-%m-%d)",
+            "prerelease": ${PRERELEASE},
+            "changelog": "https://github.com/${{ github.repository }}/releases/tag/v${VERSION}",
+            "assets": {
+              "vsix": "${CDN_URL}/vscode/v${VERSION}/work-studio-ai-${VERSION}.vsix",
+              "win_exe": "${CDN_URL}/vscode/v${VERSION}/install-workstudio-${VERSION}-win.exe",
+              "macos_x64": "${CDN_URL}/vscode/v${VERSION}/install-workstudio-${VERSION}-macos-x64",
+              "macos_arm64": "${CDN_URL}/vscode/v${VERSION}/install-workstudio-${VERSION}-macos-arm64",
+              "linux": "${CDN_URL}/vscode/v${VERSION}/install-workstudio-${VERSION}-linux"
+            }
+          }
+          EOF
+          
+          aws s3 cp vscode-latest.json s3://${{ env.CDN_BUCKET }}/vscode/latest.json --content-type "application/json"
+          
+          echo "✅ Uploaded to CDN: ${CDN_URL}/vscode/v${VERSION}/"
+          echo "✅ Manifest updated: ${CDN_URL}/vscode/latest.json"
 
   # Optional: Publish to VS Code Marketplace
   publish-marketplace:

@@ -1,10 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- work.studio app icon - W + orbital design (128x128) -->
+  <!-- Colors injected by distribute-brand.ps1 from brand.config.json -->
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    <linearGradient id="brandGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C17F59" />
+      <stop offset="50%" stop-color="#A86E4A" />
+      <stop offset="100%" stop-color="#8B5A3C" />
     </linearGradient>
   </defs>
-  <rect width="128" height="128" rx="24" fill="url(#grad)"/>
-  <text x="64" y="82" font-family="Arial, sans-serif" font-size="64" font-weight="bold" fill="white" text-anchor="middle">W</text>
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="url(#brandGradient)" />
+  <ellipse cx="64" cy="58" rx="45" ry="16" stroke="white" stroke-width="1.5" opacity="0.3" fill="none" transform="rotate(-30 64 58)"/>
+  <ellipse cx="64" cy="58" rx="45" ry="16" stroke="white" stroke-width="1.5" opacity="0.3" fill="none" transform="rotate(30 64 58)"/>
+  <path d="M29 35 L42 87 L64 55 L86 87 L99 35" stroke="white" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <circle cx="64" cy="55" r="13" fill="white" opacity="0.95"/>
+  <circle cx="64" cy="55" r="8" fill="url(#brandGradient)"/>
+  <circle cx="29" cy="35" r="7" fill="white"/>
+  <circle cx="99" cy="35" r="7" fill="white"/>
+  <circle cx="42" cy="87" r="6" fill="white" opacity="0.85"/>
+  <circle cx="86" cy="87" r="6" fill="white" opacity="0.85"/>
 </svg>

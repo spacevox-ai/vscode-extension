@@ -4,6 +4,7 @@
   "description": "AI-powered code completion, chat, and governance for enterprise teams",
   "version": "0.1.0",
   "publisher": "workstudio",
+  "icon": "images/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/workstudio/vscode-extension"
@@ -83,8 +84,32 @@
       {
         "command": "workstudio.openChat",
         "title": "work.studio: Open Chat"
+      },
+      {
+        "command": "workstudio.openChatPanel",
+        "title": "work.studio: Open Chat Panel",
+        "icon": "$(comment-discussion)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "workstudio",
+          "title": "work.studio",
+          "icon": "media/icon-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "workstudio": [
+        {
+          "type": "webview",
+          "id": "workStudio.chatView",
+          "name": "Chat",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
     "configuration": {
       "title": "work.studio AI",
       "properties": {
@@ -133,6 +158,94 @@
           "type": "boolean",
           "default": true,
           "description": "Enable usage analytics for governance"
+        },
+        "workStudio.aiEndpoint": {
+          "type": "string",
+          "default": "http://localhost:8102/api/v1/workflow/ai-runtime/mcp",
+          "description": "AI runtime endpoint URL for chat"
+        },
+        "workStudio.accountServiceUrl": {
+          "type": "string",
+          "default": "http://localhost:8081/api/v1/workflow/account",
+          "description": "Account service URL for identity resolution"
+        },
+        "workStudio.agentId": {
+          "type": "string",
+          "default": "019d5a01-1001-7001-8001-000000000050",
+          "description": "Agent ID to use for chat (UUID)"
+        },
+        "workStudio.tenantId": {
+          "type": "string",
+          "default": "00000000-0000-0000-0000-000000000001",
+          "description": "Tenant ID for API requests (UUID)"
+        },
+        "workStudio.envId": {
+          "type": "string",
+          "default": "00000000-0000-0000-0000-000000000001",
+          "description": "Environment ID for API requests (UUID)"
+        },
+        "workStudio.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for AI runtime authentication (optional, JWT preferred)"
+        },
+        "workStudio.model": {
+          "type": "string",
+          "default": "claude-sonnet-4-20250514",
+          "description": "Default AI model to use for chat"
+        },
+        "workStudio.brand.name": {
+          "type": "string",
+          "default": "",
+          "description": "Override brand name (e.g., 'Acme AI Assistant')"
+        },
+        "workStudio.brand.shortName": {
+          "type": "string",
+          "default": "",
+          "description": "Override short brand name (e.g., 'Acme AI')"
+        },
+        "workStudio.brand.accentColor": {
+          "type": "string",
+          "default": "",
+          "description": "Override accent color (hex, e.g., '#ff5500')"
+        },
+        "workStudio.brand.avatarGradient": {
+          "type": "string",
+          "default": "",
+          "description": "Override assistant avatar gradient (CSS gradient, e.g., 'linear-gradient(135deg, #ff5500, #ff8800)')"
+        },
+        "workStudio.brand.welcomeTitle": {
+          "type": "string",
+          "default": "",
+          "description": "Override welcome screen title"
+        },
+        "workStudio.brand.welcomeHint": {
+          "type": "string",
+          "default": "",
+          "description": "Override welcome screen hint text"
+        },
+        "workStudio.brand.statusBarText": {
+          "type": "string",
+          "default": "",
+          "description": "Override status bar text"
+        },
+        "workStudio.brand.suggestions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "icon": { "type": "string" },
+              "text": { "type": "string" },
+              "action": { "type": "string" }
+            }
+          },
+          "description": "Override suggestion buttons [{icon, text, action}, ...]"
+        },
+        "workStudio.brand.defaultAgentId": {
+          "type": "string",
+          "default": "",
+          "description": "Override default agent UUID"
         }
       }
     },
