@@ -18,10 +18,10 @@ import { WorkstudioCompletionProvider } from './completion/CompletionProvider';
 import { WorkstudioChatParticipant } from './chat/ChatParticipant';
 import { StatusBarManager } from './ui/StatusBar';
 import { Logger } from './utils/Logger';
-import { getServerUrl, getEnvironmentName, logConfiguration } from './config/EnvironmentConfig';
+import { getServerUrl, getEnvironmentName, getAiEndpoint, logConfiguration } from './config/EnvironmentConfig';
 import { ToolRegistry, registerAllTools } from './tools';
-import { ChatPanel, ChatSidebarProvider } from './webview';
-import { BrandingService } from './config/BrandingService';
+import { ChatPanel, ChatSidebarProvider, StatusPanelProvider } from './webview';
+import { BrandingService, getBranding } from './config/BrandingService';
 
 let mcpClient: McpClient | undefined;
 let authService: AuthService | undefined;
@@ -30,9 +30,13 @@ let chatParticipant: WorkstudioChatParticipant | undefined;
 let statusBar: StatusBarManager | undefined;
 let toolRegistry: ToolRegistry | undefined;
 let chatSidebarProvider: ChatSidebarProvider | undefined;
+let extensionUri: vscode.Uri | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
     Logger.info('work.studio AI extension activating...');
+
+    // Store extension URI for later use
+    extensionUri = context.extensionUri;
 
     // Initialize branding service first
     await BrandingService.getInstance().initialize(context);
@@ -72,6 +76,10 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('workstudio.logout', () => {
             Logger.info('workstudio.logout command triggered');
             return handleLogout();
+        }),
+        vscode.commands.registerCommand('workstudio.selectEnvironment', () => {
+            Logger.info('workstudio.selectEnvironment command triggered');
+            return authService.selectEnvironment();
         }),
         vscode.commands.registerCommand('workstudio.showStatus', () => showStatus()),
         vscode.commands.registerCommand('workstudio.toggleCompletion', () => toggleCompletion()),
@@ -154,6 +162,7 @@ async function handleLogout(): Promise<void> {
     try {
         mcpClient?.disconnect();
         await authService?.logout();
+        chatSidebarProvider?.clearSession();  // Clear cached AI session
         updateStatusBar();
         vscode.window.showInformationMessage('work.studio: Signed out');
     } catch (error) {
@@ -162,23 +171,16 @@ async function handleLogout(): Promise<void> {
 }
 
 function showStatus(): void {
+    if (!extensionUri) {
+        vscode.window.showErrorMessage('Extension not fully initialized');
+        return;
+    }
+    
     const authenticated = authService?.isAuthenticated() ?? false;
     const config = vscode.workspace.getConfiguration('workstudio');
-    const workStudioConfig = vscode.workspace.getConfiguration('workStudio');
     const completionEnabled = config.get<boolean>('completion.enabled', true);
-    const aiEndpoint = workStudioConfig.get<string>('aiEndpoint', 'http://localhost:8102/api/v1/workflow/ai-runtime/mcp');
 
-    const statusItems = [
-        `Mode: HTTP/SSE (Sidebar Chat)`,
-        `Authentication: ${authenticated ? '✅ Signed in' : '❌ Not signed in'}`,
-        `Code Completion: ${completionEnabled ? '✅ Enabled' : '⏸️ Disabled'}`,
-        `AI Endpoint: ${aiEndpoint}`
-    ];
-
-    vscode.window.showInformationMessage(
-        'work.studio Status',
-        { modal: true, detail: statusItems.join('\n') }
-    );
+    StatusPanelProvider.show(extensionUri, authenticated, completionEnabled);
 }
 
 function toggleCompletion(): void {
@@ -202,12 +204,8 @@ async function triggerCompletion(): Promise<void> {
 }
 
 async function openChat(): Promise<void> {
-    // Open the chat panel and focus on @workstudio
-    await vscode.commands.executeCommand('workbench.panel.chat.view.copilot.focus');
-    // Pre-fill with @workstudio mention
-    await vscode.commands.executeCommand('workbench.action.chat.open', {
-        query: '@workstudio '
-    });
+    // Open the custom work.studio sidebar chat view
+    await vscode.commands.executeCommand('workStudio.chatView.focus');
 }
 
 function openChatPanel(context: vscode.ExtensionContext): void {

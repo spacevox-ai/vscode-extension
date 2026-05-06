@@ -12,6 +12,9 @@
 !media/**/*.svg
 !brand.config.json
 
+# Include webview UI build (React app)
+!webview-ui/build/**
+
 # Exclude dev/build files
 .vscode/**
 src/**

@@ -16,6 +16,10 @@ export interface BrandTheme {
   assistantAvatarGradient: string;
   assistantAvatarIcon?: 'globe' | 'sparkles' | 'brain' | 'custom';
   customAvatarSvg?: string;
+  /** Full logo image URL (PNG, SVG, etc.) */
+  logoUrl?: string;
+  /** Inline SVG for logo (alternative to logoUrl) */
+  logoSvg?: string;
 }
 
 export interface WebviewBranding {

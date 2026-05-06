@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useCallback, useState } from 'react';
 import { ChatContainer } from './components/ChatContainer';
+import { Attachment } from './components/ChatInput';
 import { Environment } from './components/EnvironmentSelector';
 import { vscode, MessageFromExtension } from './utilities/vscode';
 import { chatReducer, initialState } from './state/chatReducer';
@@ -143,11 +144,22 @@ export default function App() {
   }, [handleMessage]);
 
   // Send message handler
-  const handleSendMessage = useCallback((content: string) => {
-    if (!content.trim()) return;
+  const handleSendMessage = useCallback((content: string, attachments?: Attachment[]) => {
+    if (!content.trim() && (!attachments || attachments.length === 0)) return;
     
     dispatch({ type: 'SET_LOADING', payload: true });
-    vscode.postMessage({ type: 'sendMessage', payload: { content } });
+    vscode.postMessage({ 
+      type: 'sendMessage', 
+      payload: { 
+        content,
+        attachments: attachments?.map(a => ({
+          type: a.type,
+          name: a.name,
+          data: a.data,
+          size: a.size
+        }))
+      } 
+    });
   }, []);
 
   // Clear history handler

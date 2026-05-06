@@ -3,14 +3,18 @@
  * 
  * Provides the chat interface as a sidebar view that persists
  * across editor sessions. Registered as a WebviewViewProvider.
+ * 
+ * Uses the MCP (Model Context Protocol) endpoint for AI chat streaming.
+ * This allows direct JWT authentication from IDE clients.
  */
 
 import * as vscode from 'vscode';
 import { Logger } from '../../utils/Logger';
 import { ToolRegistry } from '../../tools';
-import { ChatMessage, ToolResult, ToolContext } from '../../tools/types';
+import { ChatMessage, ChatAttachment, ToolResult, ToolContext } from '../../tools/types';
 import { AuthService } from '../../auth/AuthService';
 import { getBranding } from '../../config/BrandingService';
+import { getAiEndpoint, getEnvironmentName } from '../../config/EnvironmentConfig';
 
 interface WebviewMessage {
     type: string;
@@ -138,12 +142,13 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
     /**
      * Handle user message submission
      */
-    private async handleUserMessage(payload: { content: string }): Promise<void> {
+    private async handleUserMessage(payload: { content: string; attachments?: ChatAttachment[] }): Promise<void> {
         const userMessage: ChatMessage = {
             id: this.generateId(),
             role: 'user',
             content: payload.content,
             timestamp: Date.now(),
+            attachments: payload.attachments,
         };
 
         this.messages.push(userMessage);
@@ -161,7 +166,7 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
         this.sendToWebview('messageAdded', assistantMessage);
 
         try {
-            await this.streamAIResponse(payload.content, assistantMessage.id);
+            await this.streamAIResponse(payload.content, assistantMessage.id, payload.attachments);
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : 'Unknown error';
             Logger.error(`Stream error: ${errorMsg}`);
@@ -173,26 +178,55 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
     }
 
     /**
+     * Clear any cached state (called on logout)
+     */
+    public clearSession(): void {
+        // No session caching with MCP pattern - this is kept for API compatibility
+        Logger.info('clearSession called - no session to clear (MCP uses JWT directly)');
+    }
+
+    /**
      * Stream AI response with tool execution
      */
-    private async streamAIResponse(userInput: string, messageId: string): Promise<void> {
+    private async streamAIResponse(userInput: string, messageId: string, attachments?: ChatAttachment[]): Promise<void> {
         const config = vscode.workspace.getConfiguration('workStudio');
-        const endpoint = config.get<string>('aiEndpoint', 'http://localhost:8102/api/v1/workflow/ai-runtime/mcp');
-        const agentId = config.get<string>('agentId', '00000000-0000-0000-0000-000000000001');
+        const agentId = config.get<string>('agentId', '019d5a01-1001-7001-8001-000000000050');
 
         // Get JWT token from auth service
-        const token = await this.authService.getStoredToken();
-        if (!token) {
+        const keycloakToken = await this.authService.getStoredToken();
+        if (!keycloakToken) {
             throw new Error('Not authenticated. Please sign in first using the "work.studio: Sign In" command.');
         }
 
-        // Get tenant/env from resolved identity (or fallback to config)
-        const tenantId = await this.authService.getTenantId() 
-            || config.get<string>('tenantId', '00000000-0000-0000-0000-000000000001');
-        const envId = await this.authService.getEnvId() 
-            || config.get<string>('envId', '00000000-0000-0000-0000-000000000001');
+        // Get tenant/env from resolved identity
+        const tenantId = await this.authService.getTenantId();
+        const envId = await this.authService.getEnvId();
+        
+        console.log(`[work.studio] Chat context - tenantId: ${tenantId}, envId: ${envId}`);
+        
+        if (!tenantId) {
+            throw new Error('No tenant ID found. Please sign out and sign in again.');
+        }
+        
+        if (!envId) {
+            // Try to get environments and prompt selection
+            const environments = await this.authService.getEnvironments();
+            console.log(`[work.studio] No envId stored, found ${environments?.length || 0} environments in storage`);
+            
+            if (environments && environments.length > 0) {
+                throw new Error('No environment selected. Please run "work.studio: Select Environment" from the command palette.');
+            } else {
+                throw new Error('No environments available. Please sign out and sign in again.');
+            }
+        }
 
-        Logger.info(`Streaming to: ${endpoint}/chat/stream with agentId: ${agentId}, tenant: ${tenantId}, env: ${envId}`);
+        // Use MCP endpoint directly with JWT - no session handoff needed
+        // The MCP endpoint is designed for IDE clients and accepts JWT auth
+        const chatUrl = `${getAiEndpoint()}/chat/stream`;
+
+        Logger.info(`Streaming to: ${chatUrl} with agentId: ${agentId}, tenant: ${tenantId}, env: ${envId}, environment: ${getEnvironmentName()}, attachments: ${attachments?.length || 0}`);
+
+        // Build conversation history as context string
 
         // Build conversation history as context string
         const history = this.messages
@@ -203,12 +237,20 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
         // Build workspace context
         const workspaceContext = await this.buildWorkspaceContext();
 
+        // Prepare inline attachments for the request
+        const inlineAttachments = attachments?.map(a => ({
+            type: a.type,
+            name: a.name,
+            data: a.data,  // base64 data URL
+            size: a.size
+        }));
+
         try {
-            const response = await fetch(`${endpoint}/chat/stream`, {
+            const response = await fetch(chatUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
+                    'Authorization': `Bearer ${keycloakToken}`,
                     'Accept': 'text/event-stream',
                     'X-SELECTED-TENANT': tenantId,
                     'X-SELECTED-ENV': envId,
@@ -218,6 +260,7 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
                     agentId: agentId,
                     context: workspaceContext,
                     history: history || undefined,
+                    attachments: inlineAttachments,
                 }),
             });
 
@@ -225,6 +268,12 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
 
             if (!response.ok) {
                 const errorText = await response.text().catch(() => 'No body');
+                
+                // If auth failed, suggest re-login
+                if (response.status === 401 || response.status === 403) {
+                    Logger.warn('Authentication failed - may need to sign in again');
+                }
+                
                 throw new Error(`API error: ${response.status} ${response.statusText} - ${errorText}`);
             }
 
@@ -256,14 +305,32 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
         const editor = vscode.window.activeTextEditor;
         if (editor) {
             const doc = editor.document;
-            parts.push(`Active file: ${doc.fileName}`);
+            const relativePath = vscode.workspace.asRelativePath(doc.uri);
+            parts.push(`Active file: ${relativePath}`);
             parts.push(`Language: ${doc.languageId}`);
             
-            // Include selection or surrounding context
+            // Include selection or visible code
             const selection = editor.selection;
             if (!selection.isEmpty) {
+                // User has selected code - include it
                 const selectedText = doc.getText(selection);
-                parts.push(`Selected code:\n\`\`\`${doc.languageId}\n${selectedText}\n\`\`\``);
+                parts.push(`Selected code (lines ${selection.start.line + 1}-${selection.end.line + 1}):\n\`\`\`${doc.languageId}\n${selectedText}\n\`\`\``);
+            } else {
+                // No selection - include visible range of the file
+                const visibleRanges = editor.visibleRanges;
+                if (visibleRanges.length > 0) {
+                    const visibleRange = visibleRanges[0];
+                    const startLine = Math.max(0, visibleRange.start.line);
+                    const endLine = Math.min(doc.lineCount - 1, visibleRange.end.line);
+                    const visibleText = doc.getText(new vscode.Range(startLine, 0, endLine, doc.lineAt(endLine).text.length));
+                    
+                    // Limit to reasonable size (max 100 lines or 5000 chars)
+                    const lines = visibleText.split('\n');
+                    const limitedText = lines.length > 100 ? lines.slice(0, 100).join('\n') + '\n... (truncated)' : visibleText;
+                    const finalText = limitedText.length > 5000 ? limitedText.substring(0, 5000) + '\n... (truncated)' : limitedText;
+                    
+                    parts.push(`Visible code (lines ${startLine + 1}-${Math.min(startLine + 100, endLine + 1)}):\n\`\`\`${doc.languageId}\n${finalText}\n\`\`\``);
+                }
             }
         }
 

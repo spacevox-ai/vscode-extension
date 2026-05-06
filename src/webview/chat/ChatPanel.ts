@@ -10,6 +10,7 @@ import * as vscode from 'vscode';
 import { Logger } from '../../utils/Logger';
 import { ToolRegistry } from '../../tools';
 import { ChatMessage, ToolResult, ToolContext } from '../../tools/types';
+import { getAiEndpoint } from '../../config/EnvironmentConfig';
 
 interface WebviewMessage {
     type: string;
@@ -182,7 +183,7 @@ export class ChatPanel {
     private async streamAIResponse(userInput: string, messageId: string): Promise<void> {
         // Get AI endpoint from configuration
         const config = vscode.workspace.getConfiguration('workStudio');
-        const endpoint = config.get<string>('aiEndpoint', 'http://localhost:8102/api/v1/workflow/ai-runtime/mcp');
+        const endpoint = getAiEndpoint();
         const apiKey = config.get<string>('apiKey', '');
 
         // Prepare messages for API

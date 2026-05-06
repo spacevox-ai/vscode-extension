@@ -16,9 +16,10 @@ interface ChatMessageProps {
   message: ChatMessageType;
   onCopyCode: (code: string) => void;
   onInsertCode: (code: string, language?: string) => void;
+  isStreaming?: boolean; // True if this message is currently being streamed
 }
 
-export function ChatMessage({ message, onCopyCode, onInsertCode }: ChatMessageProps) {
+export function ChatMessage({ message, onCopyCode, onInsertCode, isStreaming = false }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
 
@@ -92,8 +93,8 @@ export function ChatMessage({ message, onCopyCode, onInsertCode }: ChatMessagePr
           ) : null}
         </div>
 
-        {/* Persisted thinking (shown after completion) */}
-        {isAssistant && message.thinking && (
+        {/* Persisted thinking (shown after completion, not during streaming) */}
+        {isAssistant && message.thinking && !isStreaming && (
           <div className="chat-message-thinking">
             <ThinkingIndicator content={message.thinking} isActive={false} />
           </div>

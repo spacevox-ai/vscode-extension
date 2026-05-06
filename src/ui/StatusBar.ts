@@ -5,6 +5,7 @@
  */
 
 import * as vscode from 'vscode';
+import { getBranding } from '../config/BrandingService';
 
 type StatusType = 'connected' | 'connecting' | 'disconnected' | 'error' | 'inactive';
 
@@ -36,6 +37,7 @@ const STATUS_COLORS: Record<StatusType, vscode.ThemeColor | undefined> = {
 export class StatusBarManager {
     private statusBarItem: vscode.StatusBarItem;
     private currentStatus: StatusType = 'inactive';
+    private brandingDisposable: vscode.Disposable;
 
     constructor() {
         this.statusBarItem = vscode.window.createStatusBarItem(
@@ -44,7 +46,27 @@ export class StatusBarManager {
         );
         this.statusBarItem.command = 'workstudio.showStatus';
         this.statusBarItem.show();
-        this.setStatus('inactive', 'work.studio: Not signed in');
+        this.setStatus('inactive', `${this.getBrandName()}: Not signed in`);
+        
+        // Listen for branding changes
+        this.brandingDisposable = getBranding().onConfigChange(() => {
+            this.refreshText();
+        });
+    }
+
+    /**
+     * Get the brand name from branding service
+     */
+    private getBrandName(): string {
+        return getBranding().statusBarText;
+    }
+
+    /**
+     * Refresh the status bar text with current branding
+     */
+    private refreshText(): void {
+        const icon = STATUS_ICONS[this.currentStatus];
+        this.statusBarItem.text = `${icon} ${this.getBrandName()}`;
     }
 
     /**
@@ -57,7 +79,7 @@ export class StatusBarManager {
         const color = STATUS_COLORS[status];
         const background = STATUS_BACKGROUNDS[status];
         
-        this.statusBarItem.text = `${icon} work.studio`;
+        this.statusBarItem.text = `${icon} ${this.getBrandName()}`;
         this.statusBarItem.tooltip = tooltip;
         
         // Apply background color for better visibility
@@ -78,6 +100,7 @@ export class StatusBarManager {
      * Dispose of the status bar item
      */
     dispose(): void {
+        this.brandingDisposable.dispose();
         this.statusBarItem.dispose();
     }
 }

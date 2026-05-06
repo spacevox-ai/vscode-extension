@@ -6,3 +6,4 @@
 
 export { ChatPanel } from './chat/ChatPanel';
 export { ChatSidebarProvider } from './chat/ChatSidebarProvider';
+export { StatusPanelProvider } from './StatusPanelProvider';

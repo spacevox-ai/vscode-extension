@@ -248,6 +248,16 @@ export interface AIStreamEvent {
 }
 
 /**
+ * Attachment for chat messages (images, files)
+ */
+export interface ChatAttachment {
+    type: 'image';
+    name: string;
+    data: string;  // base64 data URL
+    size: number;
+}
+
+/**
  * Chat message for conversation history
  */
 export interface ChatMessage {
@@ -255,6 +265,7 @@ export interface ChatMessage {
     role: 'user' | 'assistant' | 'system' | 'tool';
     content: string;
     timestamp: number;
+    attachments?: ChatAttachment[];
     toolCalls?: Array<{
         id: string;
         name: string;

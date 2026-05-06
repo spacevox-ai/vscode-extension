@@ -95,11 +95,101 @@ export function isSecureMode(): boolean {
 }
 
 /**
+ * Get the AI runtime HTTP endpoint for chat API calls.
+ * Derives from serverUrl or uses explicit override.
+ */
+export function getAiEndpoint(): string {
+    const config = vscode.workspace.getConfiguration('workStudio');
+    const explicit = config.get<string>('aiEndpoint');
+    
+    // If explicit endpoint set, use it
+    if (explicit && explicit.trim() !== '') {
+        return explicit;
+    }
+    
+    // Derive from environment
+    const envName = vscode.workspace.getConfiguration('workstudio').get<string>('environment', 'local');
+    
+    switch (envName) {
+        case 'production':
+            return 'https://api.work.studio/api/v1/workflow/ai-runtime/mcp';
+        case 'staging':
+            return 'https://api.stage.work.studio/api/v1/workflow/ai-runtime/mcp';
+        case 'local':
+        default:
+            return 'http://localhost:8102/api/v1/workflow/ai-runtime/mcp';
+    }
+}
+
+/**
  * Get environment name for logging/display
  */
 export function getEnvironmentName(): string {
     const config = vscode.workspace.getConfiguration('workstudio');
     return config.get<string>('environment', 'local');
+}
+
+/**
+ * Get the Gateway URL for session handoff.
+ * In production, we create AI sessions via portal which returns a session token.
+ * Portal handles auth and routes to gateway internally.
+ */
+export function getGatewayUrl(): string {
+    const config = vscode.workspace.getConfiguration('workStudio');
+    const explicit = config.get<string>('gatewayUrl');
+    
+    // If explicit gateway URL set, use it
+    if (explicit && explicit.trim() !== '') {
+        return explicit;
+    }
+    
+    // Derive from environment - use portal route (same as designer)
+    const envName = vscode.workspace.getConfiguration('workstudio').get<string>('environment', 'local');
+    
+    switch (envName) {
+        case 'production':
+            return 'https://api.work.studio/api/v1/workflow/portal';
+        case 'staging':
+            return 'https://api.stage.work.studio/api/v1/workflow/portal';
+        case 'local':
+        default:
+            // For local, use portal endpoint 
+            return 'http://localhost:8088/api/v1/workflow/portal';
+    }
+}
+
+/**
+ * Check if we're in a non-local environment (requires session handoff)
+ */
+export function requiresSessionHandoff(): boolean {
+    const envName = vscode.workspace.getConfiguration('workstudio').get<string>('environment', 'local');
+    return envName === 'production' || envName === 'staging';
+}
+
+/**
+ * Get the Account service URL for user/tenant resolution.
+ */
+export function getAccountUrl(): string {
+    const config = vscode.workspace.getConfiguration('workStudio');
+    const explicit = config.get<string>('accountServiceUrl');
+    
+    // If explicit URL set, use it
+    if (explicit && explicit.trim() !== '') {
+        return explicit;
+    }
+    
+    // Derive from environment
+    const envName = vscode.workspace.getConfiguration('workstudio').get<string>('environment', 'local');
+    
+    switch (envName) {
+        case 'production':
+            return 'https://api.work.studio/api/v1/workflow/account';
+        case 'staging':
+            return 'https://api.stage.work.studio/api/v1/workflow/account';
+        case 'local':
+        default:
+            return 'http://localhost:8081/api/v1/workflow/account';
+    }
 }
 
 /**

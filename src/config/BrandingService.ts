@@ -154,24 +154,32 @@ export class BrandingService {
     accessToken: string,
     accountServiceUrl: string
   ): Promise<void> {
+    const brandingUrl = `${accountServiceUrl}/tenants/${tenantId}/customization/extension-branding`;
+    console.log(`[work.studio] Fetching branding from: ${brandingUrl}`);
+    
     try {
-      const response = await fetch(
-        `${accountServiceUrl}/api/v1/workflow/account/tenants/${tenantId}/customization/extension-branding`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'X-SELECTED-TENANT': tenantId,
-          },
-        }
-      );
+      const response = await fetch(brandingUrl, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'X-SELECTED-TENANT': tenantId,
+        },
+      });
 
-      if (response.ok) {
+      console.log(`[work.studio] Branding response status: ${response.status}`);
+
+      if (response.ok && response.status !== 204) {
         const tenantConfig: PartialBrandConfig = await response.json();
+        console.log(`[work.studio] Branding config received:`, JSON.stringify(tenantConfig).substring(0, 200));
         this.mergeConfig(tenantConfig);
         this.onConfigChangeEmitter.fire(this.config);
         Logger.info(`Applied tenant branding for ${tenantId}`);
+      } else if (response.status === 204) {
+        console.log(`[work.studio] No custom branding configured for tenant`);
+      } else {
+        console.log(`[work.studio] Branding fetch failed: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
+      console.error(`[work.studio] Branding fetch error:`, error);
       Logger.debug('No tenant-specific branding available');
     }
   }
