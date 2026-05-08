@@ -114,6 +114,12 @@
         }
       ]
     },
+    "authentication": [
+      {
+        "id": "workstudio",
+        "label": "work.studio"
+      }
+    ],
     "configuration": {
       "title": "work.studio AI",
       "properties": {

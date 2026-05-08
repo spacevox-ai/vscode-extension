@@ -14,6 +14,7 @@
 import * as vscode from 'vscode';
 import { McpClient } from './mcp/McpClient';
 import { AuthService } from './auth/AuthService';
+import { WorkStudioAuthProvider } from './auth/WorkStudioAuthProvider';
 import { WorkstudioCompletionProvider } from './completion/CompletionProvider';
 import { WorkstudioChatParticipant } from './chat/ChatParticipant';
 import { StatusBarManager } from './ui/StatusBar';
@@ -40,6 +41,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initialize branding service first
     await BrandingService.getInstance().initialize(context);
+
+    // Register VS Code Authentication Provider (native accounts integration)
+    WorkStudioAuthProvider.register(context);
 
     // Initialize services
     authService = new AuthService(context);
