@@ -177,6 +177,13 @@ export class AuthService {
     }
 
     /**
+     * Mark authentication state (called by extension when VS Code auth succeeds)
+     */
+    async setAuthenticated(value: boolean): Promise<void> {
+        await this.context.globalState.update('workstudio.isAuthenticated', value);
+    }
+
+    /**
      * Check if a token is valid (not expired)
      */
     isTokenValid(token: string): boolean {

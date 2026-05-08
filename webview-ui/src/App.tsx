@@ -1,10 +1,12 @@
 import { useEffect, useReducer, useCallback, useState } from 'react';
 import { ChatContainer } from './components/ChatContainer';
+import { SessionHistory } from './components/SessionHistory';
 import { Attachment } from './components/ChatInput';
 import { Environment } from './components/EnvironmentSelector';
 import { vscode, MessageFromExtension } from './utilities/vscode';
 import { chatReducer, initialState } from './state/chatReducer';
 import { WebviewBranding, DEFAULT_BRANDING, BrandTheme } from './types/branding';
+import { SessionHistoryState, initialSessionHistoryState } from './types/session';
 
 interface ConnectionState {
   isConnected: boolean;
@@ -35,6 +37,7 @@ export default function App() {
     environments: [],
   });
   const [branding, setBranding] = useState<WebviewBranding>(DEFAULT_BRANDING);
+  const [sessionHistory, setSessionHistory] = useState<SessionHistoryState>(initialSessionHistoryState);
 
   // Handle messages from extension
   const handleMessage = useCallback((event: MessageEvent<MessageFromExtension>) => {
@@ -128,6 +131,30 @@ export default function App() {
       case 'historyCleared':
         dispatch({ type: 'CLEAR_HISTORY' });
         break;
+
+      case 'brandingUpdate':
+        if (message.payload.branding) {
+          setBranding(prev => ({ ...prev, ...message.payload.branding }));
+          applyThemeVariables(message.payload.branding.theme);
+        }
+        break;
+
+      case 'sessionHistory':
+        setSessionHistory(prev => ({
+          ...prev,
+          sessions: message.payload.sessions || [],
+          count: message.payload.count || 0,
+          isLoading: false,
+          error: message.payload.success ? undefined : message.payload.error,
+        }));
+        break;
+
+      case 'sessionLoaded':
+        if (message.payload.success) {
+          dispatch({ type: 'CLEAR_HISTORY' });
+          setSessionHistory(prev => ({ ...prev, isOpen: false }));
+        }
+        break;
     }
   }, []);
 
@@ -193,24 +220,55 @@ export default function App() {
     vscode.postMessage({ type: 'signIn' });
   }, []);
 
+  // Session history handlers
+  const handleOpenSessionHistory = useCallback(() => {
+    setSessionHistory(prev => ({ ...prev, isOpen: true, isLoading: true }));
+    vscode.postMessage({ type: 'fetchSessionHistory', payload: { limit: 20 } });
+  }, []);
+
+  const handleCloseSessionHistory = useCallback(() => {
+    setSessionHistory(prev => ({ ...prev, isOpen: false }));
+  }, []);
+
+  const handleSelectSession = useCallback((sessionId: string) => {
+    vscode.postMessage({ type: 'loadSession', payload: { sessionId } });
+  }, []);
+
+  const handleRefreshSessions = useCallback(() => {
+    setSessionHistory(prev => ({ ...prev, isLoading: true }));
+    vscode.postMessage({ type: 'fetchSessionHistory', payload: { limit: 20 } });
+  }, []);
+
   return (
-    <ChatContainer
-      messages={state.messages}
-      isLoading={state.isLoading}
-      error={state.error}
-      thinking={state.thinking}
-      activeToolCalls={state.activeToolCalls}
-      isConnected={connection.isConnected}
-      currentEnv={connection.currentEnv}
-      environments={connection.environments}
-      branding={branding}
-      onSendMessage={handleSendMessage}
-      onClearHistory={handleClearHistory}
-      onCancel={handleCancel}
-      onCopyCode={handleCopyCode}
-      onInsertCode={handleInsertCode}
-      onSelectEnv={handleSelectEnv}
-      onSignIn={handleSignIn}
-    />
+    <>
+      <ChatContainer
+        messages={state.messages}
+        isLoading={state.isLoading}
+        error={state.error}
+        thinking={state.thinking}
+        activeToolCalls={state.activeToolCalls}
+        isConnected={connection.isConnected}
+        currentEnv={connection.currentEnv}
+        environments={connection.environments}
+        branding={branding}
+        onSendMessage={handleSendMessage}
+        onClearHistory={handleClearHistory}
+        onCancel={handleCancel}
+        onCopyCode={handleCopyCode}
+        onInsertCode={handleInsertCode}
+        onSelectEnv={handleSelectEnv}
+        onSignIn={handleSignIn}
+        onOpenSessionHistory={handleOpenSessionHistory}
+      />
+      <SessionHistory
+        sessions={sessionHistory.sessions}
+        isLoading={sessionHistory.isLoading}
+        error={sessionHistory.error}
+        isOpen={sessionHistory.isOpen}
+        onClose={handleCloseSessionHistory}
+        onSelectSession={handleSelectSession}
+        onRefresh={handleRefreshSessions}
+      />
+    </>
   );
 }

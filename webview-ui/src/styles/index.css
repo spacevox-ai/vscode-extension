@@ -184,10 +184,18 @@ body {
 .chat-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 8px var(--chat-spacing);
   border-bottom: 1px solid var(--vscode-widget-border, rgba(255,255,255,0.1));
   background: var(--vscode-sideBar-background);
   min-height: 36px;
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
 }
 
 .env-selector {

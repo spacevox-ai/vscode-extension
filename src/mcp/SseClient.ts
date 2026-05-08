@@ -102,6 +102,46 @@ export interface CapabilitiesResponse {
 }
 
 // ============================================================================
+// Session History Types
+// ============================================================================
+
+/**
+ * AI Session metadata from the backend
+ */
+export interface AISessionInfo {
+    id: string;
+    tenantId: string;
+    envId?: string;
+    agentId?: string;
+    userId?: string;
+    userEmail?: string;
+    sessionContext?: string;
+    status?: string;
+    title?: string;
+    messageCount?: number;
+    turnCount?: number;
+    totalInputTokens?: number;
+    totalOutputTokens?: number;
+    createdAt?: string;
+    updatedAt?: string;
+    lastMessageAt?: string;
+    artifactType?: string;
+    artifactId?: string;
+    artifactName?: string;
+}
+
+/**
+ * Response for session listing
+ */
+export interface MySessionsResponse {
+    success: boolean;
+    error?: string;
+    sessions: AISessionInfo[];
+    count: number;
+    message?: string;
+}
+
+// ============================================================================
 // SSE Client Implementation
 // ============================================================================
 
@@ -137,6 +177,28 @@ export class McpSseClient {
     async getCapabilities(): Promise<CapabilitiesResponse> {
         const url = `${this.baseUrl}/api/v1/mcp/capabilities`;
         return this.makeRequest<CapabilitiesResponse>('GET', url);
+    }
+
+    /**
+     * Get user's session history
+     * 
+     * Security: User identity is verified via JWT token on the server.
+     * Users can only see their own sessions.
+     * 
+     * @param agentId Optional filter by agent ID
+     * @param sessionContext Optional filter by session context (e.g., 'CONVERSATION', 'DESIGN_SESSION')
+     * @param limit Maximum number of sessions to return
+     * @returns List of user's sessions
+     */
+    async getMySessions(agentId?: string, sessionContext?: string, limit: number = 20): Promise<MySessionsResponse> {
+        let url = `${this.baseUrl}/api/v1/workflow/ai-runtime/sessions/my?limit=${limit}`;
+        if (agentId) {
+            url += `&agentId=${encodeURIComponent(agentId)}`;
+        }
+        if (sessionContext) {
+            url += `&sessionContext=${encodeURIComponent(sessionContext)}`;
+        }
+        return this.makeRequest<MySessionsResponse>('GET', url);
     }
 
     /**

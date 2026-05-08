@@ -19,7 +19,7 @@ import { WorkstudioCompletionProvider } from './completion/CompletionProvider';
 import { WorkstudioChatParticipant } from './chat/ChatParticipant';
 import { StatusBarManager } from './ui/StatusBar';
 import { Logger } from './utils/Logger';
-import { getServerUrl, getEnvironmentName, getAiEndpoint, logConfiguration } from './config/EnvironmentConfig';
+import { getServerUrl, getEnvironmentName, getAiEndpoint, getAccountUrl, logConfiguration } from './config/EnvironmentConfig';
 import { ToolRegistry, registerAllTools } from './tools';
 import { ChatPanel, ChatSidebarProvider, StatusPanelProvider } from './webview';
 import { BrandingService, getBranding } from './config/BrandingService';
@@ -86,7 +86,7 @@ export async function activate(context: vscode.ExtensionContext) {
         }),
         vscode.commands.registerCommand('workstudio.selectEnvironment', () => {
             Logger.info('workstudio.selectEnvironment command triggered');
-            return authService.selectEnvironment();
+            return authService?.selectEnvironment();
         }),
         vscode.commands.registerCommand('workstudio.showStatus', () => showStatus()),
         vscode.commands.registerCommand('workstudio.toggleCompletion', () => toggleCompletion()),
@@ -117,22 +117,23 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.authentication.onDidChangeSessions(async e => {
             if (e.provider.id === AUTH_PROVIDER_ID) {
-                Logger.info('work.studio authentication session changed');
+                Logger.info('work.studio authentication session changed (from accounts menu or provider)');
                 
-                // Check if we have a session
-                const session = await vscode.authentication.getSession(
-                    AUTH_PROVIDER_ID,
-                    ['openid', 'profile', 'email'],
-                    { createIfNone: false, silent: true }
-                );
+                // Check if there are any active sessions left
+                const sessions = await vscode.authentication.getSession(AUTH_PROVIDER_ID, ['openid', 'profile', 'email'], { silent: true });
                 
-                if (session) {
-                    Logger.info('Session found, connecting...');
-                    await connectToServer(session.accessToken);
-                } else {
-                    Logger.info('Session removed, updating status');
+                if (!sessions && authService?.isAuthenticated()) {
+                    // User signed out via accounts menu - do full logout
+                    Logger.info('Session removed via accounts menu - performing logout');
                     mcpClient?.disconnect();
+                    await authService?.setAuthenticated(false);
                     chatSidebarProvider?.clearSession();
+                    await chatSidebarProvider?.refreshConnectionStatus();
+                    updateStatusBar();
+                    vscode.window.showInformationMessage('work.studio: Signed out');
+                } else {
+                    // Session added or changed - just refresh UI
+                    await chatSidebarProvider?.refreshConnectionStatus();
                     updateStatusBar();
                 }
             }
@@ -140,10 +141,21 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     // Try to auto-connect if we have stored credentials
+    Logger.info('About to try auto-connect...');
     await tryAutoConnect();
+    Logger.info('Auto-connect completed');
 
     // Update status bar
+    Logger.info('Updating status bar...');
     updateStatusBar();
+    Logger.info('Status bar updated');
+
+    // Auto-focus the chat view so users can see it
+    Logger.info('Scheduling chat view focus...');
+    setTimeout(() => {
+        Logger.info('Executing workStudio.chatView.focus command');
+        vscode.commands.executeCommand('workStudio.chatView.focus');
+    }, 500);
 
     Logger.info('work.studio AI extension activated');
 }
@@ -181,7 +193,22 @@ async function handleLogin(): Promise<void> {
         Logger.info(`Login completed, session: ${session ? 'yes' : 'no'}`);
         
         if (session) {
+            // Update auth state flag
+            await authService?.setAuthenticated(true);
+            
+            // WorkStudioAuthProvider.createSession already resolved identity,
+            // but ensure AuthService also has the state
+            const tenantId = await authService?.getTenantId();
+            if (!tenantId) {
+                await authService?.resolvePlatformIdentityPublic(session.accessToken);
+            }
+            
             await connectToServer(session.accessToken);
+            
+            // Refresh sidebar connection status
+            await chatSidebarProvider?.refreshConnectionStatus();
+            updateStatusBar();
+            
             vscode.window.showInformationMessage('work.studio: Signed in successfully');
         }
     } catch (error) {
@@ -197,10 +224,14 @@ async function handleLogout(): Promise<void> {
         mcpClient?.disconnect();
         
         // Clear VS Code authentication session
-        // Note: VS Code doesn't have a direct "logout" API, but the auth provider handles it
         await authService?.logout();
+        await authService?.setAuthenticated(false);
         
-        chatSidebarProvider?.clearSession();  // Clear cached AI session
+        chatSidebarProvider?.clearSession();
+        
+        // Refresh sidebar to show sign-in screen
+        await chatSidebarProvider?.refreshConnectionStatus();
+        
         updateStatusBar();
         vscode.window.showInformationMessage('work.studio: Signed out');
     } catch (error) {
@@ -243,6 +274,7 @@ async function triggerCompletion(): Promise<void> {
 
 async function openChat(): Promise<void> {
     // Open the custom work.studio sidebar chat view
+    Logger.info('Opening work.studio chat view...');
     await vscode.commands.executeCommand('workStudio.chatView.focus');
 }
 
@@ -260,29 +292,23 @@ function openChatPanel(context: vscode.ExtensionContext): void {
 // ============================================================================
 
 async function tryAutoConnect(): Promise<void> {
+    Logger.info('tryAutoConnect: starting...');
     if (!authService || !mcpClient) {
+        Logger.info('tryAutoConnect: authService or mcpClient not available');
         return;
     }
 
     try {
-        // First, try VS Code's native authentication (silent check)
-        // This integrates with VS Code's accounts system
-        let session = await vscode.authentication.getSession(
-            AUTH_PROVIDER_ID,
-            ['openid', 'profile', 'email'],
-            { createIfNone: false, silent: true }
-        );
+        Logger.info('tryAutoConnect: checking stored token...');
         
-        if (session) {
-            Logger.info('Found existing VS Code session, connecting...');
-            await connectToServer(session.accessToken);
-            return;
-        }
-        
-        // Fallback: Check legacy token storage
         const token = await authService.getStoredToken();
-        if (token && authService.isTokenValid(token)) {
-            Logger.info('Found valid stored token, auto-connecting...');
+        Logger.info(`tryAutoConnect: stored token found=${!!token}`);
+        
+        if (token) {
+            Logger.info('Found stored token, auto-connecting...');
+            
+            // Mark as authenticated
+            await authService.setAuthenticated(true);
             
             // Check if we have tenant info, if not resolve it
             const tenantId = await authService.getTenantId();
@@ -291,14 +317,35 @@ async function tryAutoConnect(): Promise<void> {
                 await authService.resolvePlatformIdentityPublic(token);
             }
             
+            // Always fetch branding if we have tenant info
+            const finalTenantId = await authService.getTenantId();
+            if (finalTenantId) {
+                try {
+                    await BrandingService.getInstance().fetchTenantBranding(
+                        finalTenantId, token, getAccountUrl()
+                    );
+                    Logger.info('Tenant branding fetched during auto-connect');
+                } catch (e) {
+                    Logger.warn('Failed to fetch tenant branding during auto-connect', e);
+                }
+            }
+            
             await connectToServer(token);
+            
+            // Refresh sidebar
+            await chatSidebarProvider?.refreshConnectionStatus();
         } else {
-            // No valid token - update status bar to show sign-in prompt
-            Logger.info('No valid token found, prompting for sign in...');
+            // No token at all
+            Logger.info('No stored token found, prompting for sign in...');
             statusBar?.setStatus('inactive');
             
             // Show sign-in prompt after a short delay to not interrupt startup
             setTimeout(async () => {
+                // Double-check we're still not authenticated (user may have signed in by now)
+                if (authService?.isAuthenticated()) {
+                    return;
+                }
+                
                 const action = await vscode.window.showInformationMessage(
                     'work.studio: Sign in to enable AI features',
                     'Sign In',
@@ -306,12 +353,7 @@ async function tryAutoConnect(): Promise<void> {
                 );
                 
                 if (action === 'Sign In') {
-                    // Use VS Code's native auth flow
-                    await vscode.authentication.getSession(
-                        AUTH_PROVIDER_ID,
-                        ['openid', 'profile', 'email'],
-                        { createIfNone: true }
-                    );
+                    await handleLogin();
                 }
             }, 2000);
         }

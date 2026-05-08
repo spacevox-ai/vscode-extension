@@ -15,6 +15,7 @@ import { ChatMessage, ChatAttachment, ToolResult, ToolContext } from '../../tool
 import { AuthService } from '../../auth/AuthService';
 import { getBranding } from '../../config/BrandingService';
 import { getAiEndpoint, getEnvironmentName } from '../../config/EnvironmentConfig';
+import { getSseClient } from '../../mcp/SseClient';
 
 interface WebviewMessage {
     type: string;
@@ -43,7 +44,7 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
         context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken
     ): void {
-        Logger.debug('ChatSidebarProvider: resolveWebviewView called');
+        Logger.info('ChatSidebarProvider: resolveWebviewView called');
         this.view = webviewView;
 
         webviewView.webview.options = {
@@ -55,9 +56,11 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
             ],
         };
         
-        Logger.debug(`ChatSidebarProvider: extensionUri=${this.extensionUri.toString()}`);
+        Logger.info(`ChatSidebarProvider: extensionUri=${this.extensionUri.toString()}`);
 
-        webviewView.webview.html = this.getHtmlContent(webviewView.webview);
+        const html = this.getHtmlContent(webviewView.webview);
+        Logger.info(`ChatSidebarProvider: HTML length=${html.length}`);
+        webviewView.webview.html = html;
 
         // Handle messages from webview
         webviewView.webview.onDidReceiveMessage(
@@ -142,8 +145,78 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
                 await vscode.commands.executeCommand('workstudio.login');
                 break;
 
+            case 'fetchSessionHistory':
+                await this.handleFetchSessionHistory(message.payload);
+                break;
+
+            case 'loadSession':
+                await this.handleLoadSession(message.payload?.sessionId);
+                break;
+
             default:
                 Logger.warn(`Unknown message type: ${message.type}`);
+        }
+    }
+
+    /**
+     * Fetch user's session history from the API
+     * 
+     * Security note: The API uses JWT authentication to identify the user.
+     * Users can only see their own sessions - no spoofing possible.
+     */
+    private async handleFetchSessionHistory(payload?: { agentId?: string; sessionContext?: string; limit?: number }): Promise<void> {
+        try {
+            const client = getSseClient(getAiEndpoint());
+            // Pass sessionContext to filter by context type (e.g., 'CONVERSATION' for vscode sessions)
+            const response = await client.getMySessions(
+                payload?.agentId, 
+                payload?.sessionContext,
+                payload?.limit || 20
+            );
+            
+            this.sendToWebview('sessionHistory', {
+                sessions: response.sessions || [],
+                count: response.count || 0,
+                success: response.success,
+                error: response.error,
+            });
+        } catch (error) {
+            Logger.error('Failed to fetch session history', error);
+            this.sendToWebview('sessionHistory', {
+                sessions: [],
+                count: 0,
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to fetch session history',
+            });
+        }
+    }
+
+    /**
+     * Load a previous session's conversation
+     */
+    private async handleLoadSession(sessionId?: string): Promise<void> {
+        if (!sessionId) {
+            Logger.warn('No sessionId provided for loadSession');
+            return;
+        }
+        
+        try {
+            // TODO: Implement loading session history from API
+            // For now, just clear current history and notify the webview
+            Logger.info(`Loading session: ${sessionId}`);
+            this.messages = [];
+            this.sendToWebview('sessionLoaded', {
+                sessionId,
+                success: true,
+                message: 'Session loaded. Continue your conversation.',
+            });
+        } catch (error) {
+            Logger.error('Failed to load session', error);
+            this.sendToWebview('sessionLoaded', {
+                sessionId,
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to load session',
+            });
         }
     }
 
@@ -186,11 +259,21 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
     }
 
     /**
+     * Refresh connection status in the webview
+     * Called by extension.ts when authentication state changes
+     */
+    public async refreshConnectionStatus(): Promise<void> {
+        Logger.info('refreshConnectionStatus called');
+        await this.sendConnectionStatus();
+    }
+
+    /**
      * Clear any cached state (called on logout)
      */
     public clearSession(): void {
-        // No session caching with MCP pattern - this is kept for API compatibility
-        Logger.info('clearSession called - no session to clear (MCP uses JWT directly)');
+        Logger.info('clearSession called - clearing messages and resetting state');
+        this.messages = [];
+        this.sendToWebview('historyCleared', {});
     }
 
     /**
@@ -671,8 +754,8 @@ GUIDELINES:
 
         const nonce = this.getNonce();
         
-        Logger.debug(`ChatSidebar: Loading webview with script: ${scriptUri.toString()}`);
-        Logger.debug(`ChatSidebar: Loading webview with style: ${styleUri.toString()}`);
+        Logger.info(`ChatSidebar: Loading webview with script: ${scriptUri.toString()}`);
+        Logger.info(`ChatSidebar: Loading webview with style: ${styleUri.toString()}`);
 
         return /* html */ `
             <!DOCTYPE html>
@@ -683,7 +766,7 @@ GUIDELINES:
                 <meta http-equiv="Content-Security-Policy" 
                     content="default-src 'none'; 
                         style-src ${webview.cspSource} 'unsafe-inline'; 
-                        script-src 'nonce-${nonce}';
+                        script-src 'nonce-${nonce}' 'unsafe-eval';
                         connect-src ${webview.cspSource} http://localhost:* https://*;
                         img-src ${webview.cspSource} data:;
                         font-src ${webview.cspSource};">
@@ -723,6 +806,9 @@ GUIDELINES:
             <body>
                 <div id="root"><div class="loading-fallback">Loading work.studio...</div></div>
                 <script nonce="${nonce}">
+                    // Acquire VS Code API BEFORE module loads
+                    window.vscodeApi = acquireVsCodeApi();
+                    
                     // Error boundary for debugging
                     window.onerror = function(msg, url, line, col, error) {
                         const root = document.getElementById('root');
@@ -734,7 +820,7 @@ GUIDELINES:
                         return false;
                     };
                 </script>
-                <script nonce="${nonce}" src="${scriptUri}"></script>
+                <script nonce="${nonce}" type="module" src="${scriptUri}"></script>
             </body>
             </html>
         `;

@@ -11,6 +11,13 @@ declare function acquireVsCodeApi(): {
   setState(state: unknown): void;
 };
 
+// Declare window extension for pre-acquired API
+declare global {
+  interface Window {
+    vscodeApi?: ReturnType<typeof acquireVsCodeApi>;
+  }
+}
+
 // Message types from extension to webview
 export interface MessageFromExtension {
   type: string;
@@ -29,9 +36,13 @@ class VSCodeAPIWrapper {
   private readonly vsCodeApi: ReturnType<typeof acquireVsCodeApi> | undefined;
 
   constructor() {
-    // Check if running in VS Code webview
-    if (typeof acquireVsCodeApi === 'function') {
-      this.vsCodeApi = acquireVsCodeApi();
+    // ONLY use the pre-acquired API from the HTML script - MARKER_V2
+    // Do NOT call acquireVsCodeApi() again - it can only be called once
+    if (typeof window !== 'undefined' && window.vscodeApi) {
+      console.log('USING_PREACQUIRED_API');
+      this.vsCodeApi = window.vscodeApi;
+    } else {
+      console.warn('VS Code API not pre-acquired. Make sure window.vscodeApi is set in HTML.');
     }
   }
 

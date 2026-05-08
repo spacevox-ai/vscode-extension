@@ -169,10 +169,12 @@ export class BrandingService {
 
       if (response.ok && response.status !== 204) {
         const tenantConfig: PartialBrandConfig = await response.json();
-        console.log(`[work.studio] Branding config received:`, JSON.stringify(tenantConfig).substring(0, 200));
+        Logger.info(`Branding config received: ${JSON.stringify(tenantConfig).substring(0, 500)}`);
+        Logger.info(`Branding theme received: ${JSON.stringify(tenantConfig.theme || 'none')}`);
         this.mergeConfig(tenantConfig);
         this.onConfigChangeEmitter.fire(this.config);
         Logger.info(`Applied tenant branding for ${tenantId}`);
+        Logger.info(`Final theme after merge: ${JSON.stringify(this.config.theme)}`);
       } else if (response.status === 204) {
         console.log(`[work.studio] No custom branding configured for tenant`);
       } else {

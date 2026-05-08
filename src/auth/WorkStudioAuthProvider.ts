@@ -29,6 +29,7 @@ const TOKEN_EXPIRY_KEY = 'workstudio.tokenExpiry';
 const TENANT_ID_KEY = 'workstudio.tenantId';
 const ENV_ID_KEY = 'workstudio.envId';
 const USER_ID_KEY = 'workstudio.userId';
+const USER_EMAIL_KEY = 'workstudio.userEmail';
 const ENVIRONMENTS_KEY = 'workstudio.environments';
 
 // OAuth2 configuration
@@ -101,55 +102,44 @@ export class WorkStudioAuthProvider implements vscode.AuthenticationProvider, vs
      * Get existing sessions
      */
     async getSessions(scopes?: readonly string[]): Promise<vscode.AuthenticationSession[]> {
-        Logger.debug('getSessions called');
+        Logger.info('getSessions called');
         
         // Try to restore session from stored tokens
         const accessToken = await this.context.secrets.get(TOKEN_KEY);
         const userId = await this.context.secrets.get(USER_ID_KEY);
+        
+        Logger.info(`getSessions: accessToken=${!!accessToken}, userId=${!!userId}`);
         
         if (accessToken && userId) {
             // Check if token is still valid
             const expiryStr = await this.context.secrets.get(TOKEN_EXPIRY_KEY);
             const expiry = expiryStr ? parseInt(expiryStr, 10) : 0;
             
+            Logger.info(`getSessions: expiry=${expiry}, now=${Date.now()}, valid=${Date.now() < expiry}`);
+            
             if (Date.now() < expiry) {
-                // Try to get user info
-                const email = await this.getUserEmail(accessToken);
-                
+                // Return session with cached email label
+                const storedEmail = await this.context.secrets.get(USER_EMAIL_KEY);
                 const session: vscode.AuthenticationSession = {
                     id: userId,
                     accessToken,
                     account: {
                         id: userId,
-                        label: email || 'work.studio User'
+                        label: storedEmail || 'work.studio User'
                     },
                     scopes: scopes ? [...scopes] : ['openid', 'profile', 'email']
                 };
                 
+                Logger.info('getSessions: returning valid session');
                 this.sessions = [session];
                 return this.sessions;
             } else {
-                // Try to refresh
-                const newToken = await this.tryRefreshToken();
-                if (newToken) {
-                    const email = await this.getUserEmail(newToken);
-                    
-                    const session: vscode.AuthenticationSession = {
-                        id: userId,
-                        accessToken: newToken,
-                        account: {
-                            id: userId,
-                            label: email || 'work.studio User'
-                        },
-                        scopes: scopes ? [...scopes] : ['openid', 'profile', 'email']
-                    };
-                    
-                    this.sessions = [session];
-                    return this.sessions;
-                }
+                Logger.info('getSessions: token expired, returning empty');
+                // Don't try to refresh here - let the caller handle it
             }
         }
         
+        Logger.info('getSessions: returning empty sessions');
         this.sessions = [];
         return [];
     }
@@ -193,6 +183,11 @@ export class WorkStudioAuthProvider implements vscode.AuthenticationProvider, vs
             const userId = await this.context.secrets.get(USER_ID_KEY) || 'unknown';
             const email = await this.getUserEmail(tokens.access_token);
             
+            // Store email for getSessions() to use later
+            if (email) {
+                await this.context.secrets.store(USER_EMAIL_KEY, email);
+            }
+            
             // Create session
             const session: vscode.AuthenticationSession = {
                 id: userId,
@@ -213,7 +208,7 @@ export class WorkStudioAuthProvider implements vscode.AuthenticationProvider, vs
                 changed: []
             });
             
-            vscode.window.showInformationMessage('Signed in to work.studio');
+            // Note: Don't show notification here - extension.ts handles it
             Logger.info('Login successful');
             
             return session;
@@ -239,6 +234,7 @@ export class WorkStudioAuthProvider implements vscode.AuthenticationProvider, vs
         await this.context.secrets.delete(TENANT_ID_KEY);
         await this.context.secrets.delete(ENV_ID_KEY);
         await this.context.secrets.delete(USER_ID_KEY);
+        await this.context.secrets.delete(USER_EMAIL_KEY);
         await this.context.secrets.delete(ENVIRONMENTS_KEY);
         
         this.sessions = [];
@@ -251,7 +247,7 @@ export class WorkStudioAuthProvider implements vscode.AuthenticationProvider, vs
             });
         }
         
-        vscode.window.showInformationMessage('Signed out of work.studio');
+        // Note: Don't show notification here - extension.ts handles it
         Logger.info('Logout successful');
     }
 
@@ -298,30 +294,41 @@ export class WorkStudioAuthProvider implements vscode.AuthenticationProvider, vs
                     const error = parsedUrl.searchParams.get('error');
 
                     // Send response HTML
-                    res.writeHead(200, { 'Content-Type': 'text/html' });
+                    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
                     res.end(`
                         <!DOCTYPE html>
-                        <html>
+                        <html lang="en">
                         <head>
+                            <meta charset="UTF-8">
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
                             <title>work.studio - Authentication</title>
                             <style>
-                                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                                       display: flex; justify-content: center; align-items: center; 
-                                       height: 100vh; margin: 0; background: #1e1e1e; color: #fff; }
-                                .container { text-align: center; padding: 40px; }
-                                .success { color: #4caf50; }
-                                .error { color: #f44336; }
-                                h1 { font-size: 24px; margin-bottom: 16px; }
-                                p { color: #888; }
+                                * { margin: 0; padding: 0; box-sizing: border-box; }
+                                body { 
+                                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                                    display: flex; justify-content: center; align-items: center;
+                                    min-height: 100vh; background: linear-gradient(135deg, #1e1e2e 0%, #0f0f1a 100%); color: #fff;
+                                }
+                                .container { text-align: center; padding: 60px 40px; }
+                                .icon { font-size: 72px; margin-bottom: 24px; }
+                                .icon-success { background: linear-gradient(135deg, #10b981, #059669); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+                                .icon-error { color: #ef4444; }
+                                h1 { font-size: 28px; margin-bottom: 12px; font-weight: 600; }
+                                .success { color: #10b981; }
+                                .error { color: #ef4444; }
+                                p { color: #9ca3af; font-size: 16px; margin-top: 8px; }
+                                .hint { margin-top: 32px; padding: 16px 24px; background: rgba(255,255,255,0.05); border-radius: 8px; display: inline-block; }
+                                .hint p { color: #6b7280; font-size: 14px; margin: 0; }
                             </style>
                         </head>
                         <body>
                             <div class="container">
                                 ${error 
-                                    ? `<h1 class="error">Authentication Failed</h1><p>${error}</p>` 
-                                    : `<h1 class="success">✓ Signed in to work.studio</h1><p>You can close this window and return to VS Code.</p>`
+                                    ? `<div class="icon icon-error">&#10006;</div><h1 class="error">Authentication Failed</h1><p>${error}</p>` 
+                                    : `<div class="icon icon-success">&#10004;</div><h1 class="success">Signed in to work.studio</h1><p>Authentication successful</p><div class="hint"><p>You can close this window and return to VS Code</p></div>`
                                 }
                             </div>
+                            <script>setTimeout(() => window.close(), 2000);</script>
                         </body>
                         </html>
                     `);

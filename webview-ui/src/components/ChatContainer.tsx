@@ -5,7 +5,7 @@
  * Designed to match GitHub Copilot's clean, minimal UX.
  */
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect } from 'react';
 import { ChatMessage as ChatMessageType, ToolCall } from '../state/chatReducer';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput, Attachment } from './ChatInput';
@@ -13,7 +13,6 @@ import { ThinkingIndicator } from './ThinkingIndicator';
 import { ToolCallIndicator } from './ToolCallIndicator';
 import { EnvironmentSelector, Environment } from './EnvironmentSelector';
 import { WebviewBranding, DEFAULT_BRANDING, BrandTheme } from '../types/branding';
-import clsx from 'clsx';
 
 /**
  * Render the welcome logo/icon based on branding theme
@@ -100,6 +99,7 @@ interface ChatContainerProps {
   onInsertCode: (code: string, language?: string) => void;
   onSelectEnv: (envId: string) => void;
   onSignIn: () => void;
+  onOpenSessionHistory?: () => void;
 }
 
 export function ChatContainer({
@@ -119,9 +119,9 @@ export function ChatContainer({
   onInsertCode,
   onSelectEnv,
   onSignIn,
+  onOpenSessionHistory,
 }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -130,14 +130,10 @@ export function ChatContainer({
 
   const hasActiveToolCalls = activeToolCalls.size > 0;
 
-  const handleClear = () => {
+  const handleNewChat = () => {
     if (messages.length === 0) return;
-    if (showClearConfirm) {
+    if (window.confirm('Start a new chat? Current conversation will be cleared.')) {
       onClearHistory();
-      setShowClearConfirm(false);
-    } else {
-      setShowClearConfirm(true);
-      setTimeout(() => setShowClearConfirm(false), 3000);
     }
   };
 
@@ -156,25 +152,33 @@ export function ChatContainer({
           isConnected={isConnected}
         />
         
-        {/* New chat button - moved from input area */}
-        {messages.length > 0 && !isLoading && (
-          <button 
-            className={clsx('chat-header-button', { 'confirm': showClearConfirm })}
-            onClick={handleClear}
-            title={showClearConfirm ? "Click again to confirm" : "New chat"}
-          >
-            {showClearConfirm ? (
+        <div className="chat-header-actions">
+          {/* Session history button */}
+          {isConnected && onOpenSessionHistory && (
+            <button 
+              className="chat-header-button"
+              onClick={onOpenSessionHistory}
+              title="Session history"
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-            ) : (
+            </button>
+          )}
+          
+          {/* New chat button */}
+          {messages.length > 0 && !isLoading && (
+            <button 
+              className="chat-header-button"
+              onClick={handleNewChat}
+              title="New chat"
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 5v14M5 12h14" />
               </svg>
-            )}
-          </button>
-        )}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -270,9 +274,8 @@ export function ChatContainer({
           </div>
         )}
 
-        {/* Loading indicator when waiting for response */}
-        {isLoading && !thinking && messages.length > 0 && 
-         messages[messages.length - 1]?.content === '' && (
+        {/* Loading indicator - only show when no messages yet (initial load) */}
+        {isLoading && !thinking && messages.length === 0 && (
           <div className="chat-loading">
             <div className="chat-loading-dot"></div>
             <div className="chat-loading-dot"></div>
