@@ -44,6 +44,14 @@ jobs:
       - name: Install extension dependencies
         run: npm ci
 
+      # Build webview-ui React app (CRITICAL - without this, sidebar is empty!)
+      - name: Build webview-ui
+        run: |
+          cd webview-ui
+          npm ci
+          npm run build
+          ls -la build/assets/  # Verify build exists
+
       - name: Compile extension
         run: npm run compile
 
