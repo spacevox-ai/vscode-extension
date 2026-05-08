@@ -6,6 +6,7 @@
 
 import * as vscode from 'vscode';
 import { getBranding } from '../config/BrandingService';
+import { Logger } from '../utils/Logger';
 
 type StatusType = 'connected' | 'connecting' | 'disconnected' | 'error' | 'inactive';
 
@@ -34,18 +35,28 @@ const STATUS_COLORS: Record<StatusType, vscode.ThemeColor | undefined> = {
     inactive: new vscode.ThemeColor('descriptionForeground')
 };
 
-export class StatusBarManager {
+export class StatusBarManager implements vscode.Disposable {
     private statusBarItem: vscode.StatusBarItem;
     private currentStatus: StatusType = 'inactive';
     private brandingDisposable: vscode.Disposable;
 
     constructor() {
+        Logger.info('StatusBarManager: Creating status bar item');
+        // Use 'window' scope for id to ensure it's always visible
+        // Priority: Lower number = further right. -100 puts it near the bell/notification icons
         this.statusBarItem = vscode.window.createStatusBarItem(
+            'workstudio.statusBar',  // ID for the status bar item
             vscode.StatusBarAlignment.Right,
-            100
+            -100  // Low priority = far right (near notification bell)
         );
+        this.statusBarItem.name = 'work.studio Status';
         this.statusBarItem.command = 'workstudio.showStatus';
+        this.statusBarItem.accessibilityInformation = {
+            label: 'work.studio AI Status',
+            role: 'button'
+        };
         this.statusBarItem.show();
+        Logger.info('StatusBarManager: Status bar item created and shown');
         this.setStatus('inactive', `${this.getBrandName()}: Not signed in`);
         
         // Listen for branding changes
@@ -73,6 +84,7 @@ export class StatusBarManager {
      * Update the status bar with new status
      */
     setStatus(status: StatusType, tooltip: string): void {
+        Logger.info(`StatusBarManager: setStatus(${status}, "${tooltip}")`);
         this.currentStatus = status;
         
         const icon = STATUS_ICONS[status];
@@ -87,6 +99,7 @@ export class StatusBarManager {
         
         // Update foreground color
         this.statusBarItem.color = color;
+        Logger.info(`StatusBarManager: text="${this.statusBarItem.text}"`);
     }
 
     /**

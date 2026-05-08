@@ -12,10 +12,21 @@
 !media/**/*.svg
 !brand.config.json
 
-# Include webview UI build (React app)
+# Include webview UI build (React app) - must include the folder structure
+!webview-ui/
+!webview-ui/build/
 !webview-ui/build/**
+!webview-ui/build/assets/
+!webview-ui/build/assets/**
 
-# Exclude dev/build files
+# Explicitly exclude source files that might be under webview-ui
+webview-ui/src/**
+webview-ui/node_modules/**
+webview-ui/*.ts
+webview-ui/*.json
+webview-ui/*.config.*
+
+# Exclude dev/build files from root
 .vscode/**
 src/**
 node_modules/**

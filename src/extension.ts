@@ -47,6 +47,9 @@ export async function activate(context: vscode.ExtensionContext) {
     statusBar = new StatusBarManager();
     completionProvider = new WorkstudioCompletionProvider(mcpClient);
     chatParticipant = new WorkstudioChatParticipant(mcpClient);
+    
+    // Add status bar to subscriptions so it persists
+    context.subscriptions.push(statusBar);
 
     // Initialize tool system
     toolRegistry = ToolRegistry.getInstance();
@@ -305,12 +308,17 @@ function handleConfigurationChange(): void {
 }
 
 function updateStatusBar(): void {
+    Logger.info('updateStatusBar called');
     if (!statusBar) {
+        Logger.warn('updateStatusBar: statusBar is undefined!');
         return;
     }
 
     // In HTTP/SSE mode, "connected" means authenticated
-    if (authService?.isAuthenticated()) {
+    const isAuth = authService?.isAuthenticated() ?? false;
+    Logger.info(`updateStatusBar: isAuthenticated=${isAuth}`);
+    
+    if (isAuth) {
         const envName = getEnvironmentName();
         statusBar.setStatus('connected', `work.studio: Ready (${envName})`);
     } else {

@@ -43,6 +43,7 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
         context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken
     ): void {
+        Logger.debug('ChatSidebarProvider: resolveWebviewView called');
         this.view = webviewView;
 
         webviewView.webview.options = {
@@ -53,6 +54,8 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
                 vscode.Uri.joinPath(this.extensionUri, 'webview-ui', 'build'),
             ],
         };
+        
+        Logger.debug(`ChatSidebarProvider: extensionUri=${this.extensionUri.toString()}`);
 
         webviewView.webview.html = this.getHtmlContent(webviewView.webview);
 
@@ -662,6 +665,9 @@ GUIDELINES:
         );
 
         const nonce = this.getNonce();
+        
+        Logger.debug(`ChatSidebar: Loading webview with script: ${scriptUri.toString()}`);
+        Logger.debug(`ChatSidebar: Loading webview with style: ${styleUri.toString()}`);
 
         return /* html */ `
             <!DOCTYPE html>
@@ -691,10 +697,38 @@ GUIDELINES:
                         font-family: var(--vscode-font-family);
                         font-size: var(--vscode-font-size);
                     }
+                    .loading-fallback {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        height: 100%;
+                        color: var(--vscode-descriptionForeground);
+                    }
+                    .error-fallback {
+                        padding: 16px;
+                        color: var(--vscode-errorForeground);
+                        background: var(--vscode-inputValidation-errorBackground);
+                        margin: 8px;
+                        border-radius: 4px;
+                        font-size: 12px;
+                        white-space: pre-wrap;
+                    }
                 </style>
             </head>
             <body>
-                <div id="root"></div>
+                <div id="root"><div class="loading-fallback">Loading work.studio...</div></div>
+                <script nonce="${nonce}">
+                    // Error boundary for debugging
+                    window.onerror = function(msg, url, line, col, error) {
+                        const root = document.getElementById('root');
+                        if (root) {
+                            root.innerHTML = '<div class="error-fallback">Error loading work.studio:\\n' + 
+                                msg + '\\nLine: ' + line + ', Col: ' + col + '</div>';
+                        }
+                        console.error('work.studio error:', msg, url, line, col, error);
+                        return false;
+                    };
+                </script>
                 <script nonce="${nonce}" src="${scriptUri}"></script>
             </body>
             </html>
