@@ -14,7 +14,7 @@
 import * as vscode from 'vscode';
 import { McpClient } from './mcp/McpClient';
 import { AuthService } from './auth/AuthService';
-import { WorkStudioAuthProvider } from './auth/WorkStudioAuthProvider';
+import { WorkStudioAuthProvider, AUTH_PROVIDER_ID } from './auth/WorkStudioAuthProvider';
 import { WorkstudioCompletionProvider } from './completion/CompletionProvider';
 import { WorkstudioChatParticipant } from './chat/ChatParticipant';
 import { StatusBarManager } from './ui/StatusBar';
@@ -113,6 +113,32 @@ export async function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    // Listen for authentication session changes (sign in/out from accounts menu)
+    context.subscriptions.push(
+        vscode.authentication.onDidChangeSessions(async e => {
+            if (e.provider.id === AUTH_PROVIDER_ID) {
+                Logger.info('work.studio authentication session changed');
+                
+                // Check if we have a session
+                const session = await vscode.authentication.getSession(
+                    AUTH_PROVIDER_ID,
+                    ['openid', 'profile', 'email'],
+                    { createIfNone: false, silent: true }
+                );
+                
+                if (session) {
+                    Logger.info('Session found, connecting...');
+                    await connectToServer(session.accessToken);
+                } else {
+                    Logger.info('Session removed, updating status');
+                    mcpClient?.disconnect();
+                    chatSidebarProvider?.clearSession();
+                    updateStatusBar();
+                }
+            }
+        })
+    );
+
     // Try to auto-connect if we have stored credentials
     await tryAutoConnect();
 
@@ -140,35 +166,40 @@ export function deactivate() {
 
 async function handleLogin(): Promise<void> {
     Logger.info('handleLogin called');
-    if (!authService) {
-        vscode.window.showErrorMessage('work.studio: Auth service not initialized');
-        return;
-    }
-
+    
     try {
-        statusBar?.setStatus('connecting', 'Signing in...');
-        Logger.info('Starting login flow...');
+        statusBar?.setStatus('connecting');
+        Logger.info('Starting login flow via VS Code authentication...');
         
-        const token = await authService.login();
+        // Use VS Code's native authentication - this integrates with accounts menu
+        const session = await vscode.authentication.getSession(
+            AUTH_PROVIDER_ID,
+            ['openid', 'profile', 'email'],
+            { createIfNone: true }
+        );
         
-        Logger.info(`Login completed, token received: ${token ? 'yes' : 'no'}`);
+        Logger.info(`Login completed, session: ${session ? 'yes' : 'no'}`);
         
-        if (token) {
-            await connectToServer(token);
+        if (session) {
+            await connectToServer(session.accessToken);
             vscode.window.showInformationMessage('work.studio: Signed in successfully');
         }
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         Logger.error('Login failed', error);
         vscode.window.showErrorMessage(`work.studio: Sign in failed - ${message}`);
-        statusBar?.setStatus('error', 'Sign in failed');
+        statusBar?.setStatus('error');
     }
 }
 
 async function handleLogout(): Promise<void> {
     try {
         mcpClient?.disconnect();
+        
+        // Clear VS Code authentication session
+        // Note: VS Code doesn't have a direct "logout" API, but the auth provider handles it
         await authService?.logout();
+        
         chatSidebarProvider?.clearSession();  // Clear cached AI session
         updateStatusBar();
         vscode.window.showInformationMessage('work.studio: Signed out');
@@ -234,6 +265,21 @@ async function tryAutoConnect(): Promise<void> {
     }
 
     try {
+        // First, try VS Code's native authentication (silent check)
+        // This integrates with VS Code's accounts system
+        let session = await vscode.authentication.getSession(
+            AUTH_PROVIDER_ID,
+            ['openid', 'profile', 'email'],
+            { createIfNone: false, silent: true }
+        );
+        
+        if (session) {
+            Logger.info('Found existing VS Code session, connecting...');
+            await connectToServer(session.accessToken);
+            return;
+        }
+        
+        // Fallback: Check legacy token storage
         const token = await authService.getStoredToken();
         if (token && authService.isTokenValid(token)) {
             Logger.info('Found valid stored token, auto-connecting...');
@@ -247,17 +293,27 @@ async function tryAutoConnect(): Promise<void> {
             
             await connectToServer(token);
         } else {
-            // No valid token - prompt user to sign in
+            // No valid token - update status bar to show sign-in prompt
             Logger.info('No valid token found, prompting for sign in...');
-            const action = await vscode.window.showInformationMessage(
-                'work.studio: Sign in to enable AI features',
-                'Sign In',
-                'Later'
-            );
+            statusBar?.setStatus('inactive');
             
-            if (action === 'Sign In') {
-                await handleLogin();
-            }
+            // Show sign-in prompt after a short delay to not interrupt startup
+            setTimeout(async () => {
+                const action = await vscode.window.showInformationMessage(
+                    'work.studio: Sign in to enable AI features',
+                    'Sign In',
+                    'Later'
+                );
+                
+                if (action === 'Sign In') {
+                    // Use VS Code's native auth flow
+                    await vscode.authentication.getSession(
+                        AUTH_PROVIDER_ID,
+                        ['openid', 'profile', 'email'],
+                        { createIfNone: true }
+                    );
+                }
+            }, 2000);
         }
     } catch (error) {
         Logger.warn('Auto-connect failed, user will need to sign in manually', error);

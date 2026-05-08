@@ -137,6 +137,11 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
                 vscode.window.showInformationMessage('Copied to clipboard');
                 break;
 
+            case 'signIn':
+                // Trigger the login command
+                await vscode.commands.executeCommand('workstudio.login');
+                break;
+
             default:
                 Logger.warn(`Unknown message type: ${message.type}`);
         }

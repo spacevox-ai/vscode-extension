@@ -99,6 +99,7 @@ interface ChatContainerProps {
   onCopyCode: (code: string) => void;
   onInsertCode: (code: string, language?: string) => void;
   onSelectEnv: (envId: string) => void;
+  onSignIn: () => void;
 }
 
 export function ChatContainer({
@@ -117,6 +118,7 @@ export function ChatContainer({
   onCopyCode,
   onInsertCode,
   onSelectEnv,
+  onSignIn,
 }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -177,7 +179,41 @@ export function ChatContainer({
 
       {/* Messages */}
       <div className="chat-messages">
-        {messages.length === 0 ? (
+        {!isConnected ? (
+          /* Sign-in screen when not connected */
+          <div className="chat-welcome chat-signin">
+            <div className="chat-welcome-header">
+              {renderWelcomeLogo(branding.theme)}
+              <h2>{branding.welcomeTitle}</h2>
+            </div>
+            
+            <p className="chat-signin-message">
+              Sign in to start using {branding.shortName || 'work.studio'}
+            </p>
+            
+            <button className="chat-signin-button" onClick={onSignIn}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                <polyline points="10 17 15 12 10 7" />
+                <line x1="15" y1="12" x2="3" y2="12" />
+              </svg>
+              Sign in with {branding.shortName || 'work.studio'}
+            </button>
+            
+            <div className="chat-suggestions chat-suggestions-disabled">
+              {branding.suggestions.map((suggestion, index) => (
+                <div key={index} className="chat-suggestion disabled">
+                  <span className="chat-suggestion-icon">{suggestion.icon}</span>
+                  <span className="chat-suggestion-text">{suggestion.text}</span>
+                </div>
+              ))}
+            </div>
+            
+            <p className="chat-welcome-hint">
+              Sign in to access AI-powered assistance
+            </p>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="chat-welcome">
             <div className="chat-welcome-header">
               {renderWelcomeLogo(branding.theme)}
@@ -264,7 +300,7 @@ export function ChatContainer({
         onSendMessage={onSendMessage}
         onCancel={onCancel}
         isLoading={isLoading}
-        disabled={isLoading}
+        disabled={isLoading || !isConnected}
       />
     </div>
   );

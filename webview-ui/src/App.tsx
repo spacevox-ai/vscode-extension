@@ -188,6 +188,11 @@ export default function App() {
     vscode.postMessage({ type: 'selectEnvironment', payload: { envId } });
   }, []);
 
+  // Sign in handler
+  const handleSignIn = useCallback(() => {
+    vscode.postMessage({ type: 'signIn' });
+  }, []);
+
   return (
     <ChatContainer
       messages={state.messages}
@@ -205,6 +210,7 @@ export default function App() {
       onCopyCode={handleCopyCode}
       onInsertCode={handleInsertCode}
       onSelectEnv={handleSelectEnv}
+      onSignIn={handleSignIn}
     />
   );
 }
