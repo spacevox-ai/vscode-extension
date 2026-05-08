@@ -163,12 +163,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
     case 'STREAM_ERROR': {
       const { messageId, error } = action.payload;
+      // Set error on the message, NOT on global state (avoids double display)
+      // Global error is for connection-level errors, not per-message errors
       return {
         ...state,
         isLoading: false,
         thinking: null,
         thinkingMessageId: null,
-        error,
+        error: null, // Clear global error - message shows its own
         messages: state.messages.map(msg =>
           msg.id === messageId
             ? { ...msg, error }
