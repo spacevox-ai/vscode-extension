@@ -16,6 +16,8 @@ import { AuthService } from '../../auth/AuthService';
 import { getBranding } from '../../config/BrandingService';
 import { getAiEndpoint, getEnvironmentName } from '../../config/EnvironmentConfig';
 import { getSseClient } from '../../mcp/SseClient';
+import { getSessionHistoryService } from '../../chat/SessionHistoryService';
+import { SessionLoadState, SessionLoadProgress } from '../../chat/types';
 
 interface WebviewMessage {
     type: string;
@@ -192,30 +194,93 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * Load a previous session's conversation
+     * Load a previous session's conversation history
+     * 
+     * Uses SessionHistoryService to fetch and transform the conversation
+     * from backend AgentTurn format to frontend ChatMessage format.
+     * 
+     * @param sessionId - The session ID to restore
      */
     private async handleLoadSession(sessionId?: string): Promise<void> {
         if (!sessionId) {
             Logger.warn('No sessionId provided for loadSession');
+            this.sendToWebview('sessionLoaded', {
+                sessionId: null,
+                success: false,
+                error: 'No session ID provided',
+            });
             return;
         }
         
+        Logger.info(`Loading session: ${sessionId}`);
+        
+        // Notify webview that loading has started
+        this.sendToWebview('sessionLoadProgress', {
+            state: SessionLoadState.LOADING,
+            sessionId,
+            progress: 0,
+            message: 'Loading session...',
+        });
+
         try {
-            // TODO: Implement loading session history from API
-            // For now, just clear current history and notify the webview
-            Logger.info(`Loading session: ${sessionId}`);
-            this.messages = [];
-            this.sendToWebview('sessionLoaded', {
-                sessionId,
-                success: true,
-                message: 'Session loaded. Continue your conversation.',
+            const historyService = getSessionHistoryService();
+            
+            // Subscribe to progress updates
+            const unsubscribe = historyService.onProgress((progress: SessionLoadProgress) => {
+                this.sendToWebview('sessionLoadProgress', progress);
             });
+
+            try {
+                // Load the session with default options
+                // (includeToolCalls: true, includeSystemMessages: false, includeErrors: true)
+                const result = await historyService.loadSession(sessionId);
+
+                if (!result.success) {
+                    Logger.warn(`Failed to load session ${sessionId}: ${result.error}`);
+                    this.sendToWebview('sessionLoaded', {
+                        sessionId,
+                        success: false,
+                        error: result.error || 'Failed to load session',
+                    });
+                    return;
+                }
+
+                // Update local message state with loaded messages
+                this.messages = result.messages;
+                
+                // Calculate session metadata for display
+                const userMessageCount = result.messages.filter(m => m.role === 'user').length;
+                const assistantMessageCount = result.messages.filter(m => m.role === 'assistant').length;
+                
+                Logger.info(`Session ${sessionId} loaded: ${result.messages.length} messages (${userMessageCount} user, ${assistantMessageCount} assistant)`);
+
+                // Send loaded session to webview
+                this.sendToWebview('sessionLoaded', {
+                    sessionId,
+                    success: true,
+                    messages: result.messages,
+                    metadata: result.metadata,
+                    summary: {
+                        totalMessages: result.messages.length,
+                        userMessages: userMessageCount,
+                        assistantMessages: assistantMessageCount,
+                    },
+                    message: `Restored ${result.messages.length} messages from previous session.`,
+                });
+
+            } finally {
+                // Always clean up the subscription
+                unsubscribe();
+            }
+
         } catch (error) {
-            Logger.error('Failed to load session', error);
+            const errorMessage = error instanceof Error ? error.message : 'Failed to load session';
+            Logger.error(`Failed to load session ${sessionId}`, error);
+            
             this.sendToWebview('sessionLoaded', {
                 sessionId,
                 success: false,
-                error: error instanceof Error ? error.message : 'Failed to load session',
+                error: errorMessage,
             });
         }
     }

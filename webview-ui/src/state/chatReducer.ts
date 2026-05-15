@@ -50,6 +50,7 @@ export type ChatAction =
   | { type: 'STREAM_ERROR'; payload: { messageId: string; error: string } }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'CLEAR_HISTORY' }
+  | { type: 'LOAD_SESSION'; payload: { messages: ChatMessage[]; sessionId: string } }
   | { type: 'SET_ERROR'; payload: string | null };
 
 export const initialState: ChatState = {
@@ -189,6 +190,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return {
         ...initialState,
         tools: state.tools,
+      };
+
+    case 'LOAD_SESSION':
+      return {
+        ...initialState,
+        messages: action.payload.messages,
+        tools: state.tools,
+        isLoading: false,
+        error: null,
       };
 
     case 'SET_ERROR':

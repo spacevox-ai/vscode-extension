@@ -142,6 +142,74 @@ export interface MySessionsResponse {
 }
 
 // ============================================================================
+// Session History Types (for loading a specific session's conversation)
+// ============================================================================
+
+/**
+ * Tool call structure from backend LLMToolCall
+ */
+export interface ToolCall {
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+}
+
+/**
+ * Tool execution result from backend ToolExecutionResult
+ */
+export interface ToolExecutionResult {
+    toolCallId: string;
+    toolName: string;
+    success: boolean;
+    result?: string;
+    error?: string;
+    metadata?: Record<string, unknown>;
+}
+
+/**
+ * Single conversation turn from backend AgentTurn
+ */
+export interface AgentTurn {
+    type: 'USER_MESSAGE' | 'ASSISTANT_MESSAGE' | 'TOOL_CALL' | 'TOOL_RESULT' | 'ERROR' | 'SYSTEM' | 'SYSTEM_SUMMARY';
+    content: string | null;
+    toolCalls?: ToolCall[];
+    toolResults?: ToolExecutionResult[];
+    timestamp: number;
+}
+
+/**
+ * Metadata about a session's history
+ */
+export interface SessionHistoryMetadata {
+    sessionId: string;
+    status: string;
+    assistantId?: string;
+    messageCount: number;
+}
+
+/**
+ * Session history data containing turns
+ */
+export interface SessionHistoryData {
+    sessionId: string;
+    assistantId?: string;
+    turns: AgentTurn[];
+    turnCount: number;
+    historySummary?: string;
+}
+
+/**
+ * Response from GET /sessions/history/{sessionId}
+ */
+export interface SessionHistoryResponse {
+    success: boolean;
+    error?: string;
+    metadata?: SessionHistoryMetadata;
+    history?: SessionHistoryData;
+    historyUrl?: string;
+}
+
+// ============================================================================
 // SSE Client Implementation
 // ============================================================================
 
@@ -199,6 +267,20 @@ export class McpSseClient {
             url += `&sessionContext=${encodeURIComponent(sessionContext)}`;
         }
         return this.makeRequest<MySessionsResponse>('GET', url);
+    }
+
+    /**
+     * Get session conversation history
+     * 
+     * Retrieves the full conversation history for a specific session.
+     * User ownership is verified via JWT token on the server.
+     * 
+     * @param sessionId The session ID to retrieve history for
+     * @returns SessionHistoryResponse with turns and metadata
+     */
+    async getSessionHistory(sessionId: string): Promise<SessionHistoryResponse> {
+        const url = `${this.baseUrl}/api/v1/workflow/ai-runtime/sessions/history/${encodeURIComponent(sessionId)}`;
+        return this.makeRequest<SessionHistoryResponse>('GET', url);
     }
 
     /**

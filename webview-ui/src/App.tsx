@@ -150,9 +150,39 @@ export default function App() {
         break;
 
       case 'sessionLoaded':
-        if (message.payload.success) {
+        if (message.payload.success && message.payload.messages) {
+          // Load the session messages into state
+          dispatch({ 
+            type: 'LOAD_SESSION', 
+            payload: { 
+              messages: message.payload.messages,
+              sessionId: message.payload.sessionId,
+            } 
+          });
+          setSessionHistory(prev => ({ ...prev, isOpen: false, isLoading: false }));
+        } else if (message.payload.success) {
+          // Legacy: just clear if no messages provided
           dispatch({ type: 'CLEAR_HISTORY' });
-          setSessionHistory(prev => ({ ...prev, isOpen: false }));
+          setSessionHistory(prev => ({ ...prev, isOpen: false, isLoading: false }));
+        } else {
+          // Handle error
+          console.error('Failed to load session:', message.payload.error);
+          setSessionHistory(prev => ({ 
+            ...prev, 
+            isLoading: false,
+            error: message.payload.error 
+          }));
+        }
+        break;
+
+      case 'sessionLoadProgress':
+        // Update loading state in session history panel
+        if (message.payload.state === 'LOADING') {
+          setSessionHistory(prev => ({ 
+            ...prev, 
+            isLoading: true,
+            error: undefined,
+          }));
         }
         break;
     }
