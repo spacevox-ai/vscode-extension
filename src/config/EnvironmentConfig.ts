@@ -18,7 +18,7 @@ export interface EnvironmentConfig {
 
 // VS Code agent ID - this is the master agent that delegates to specialized agents
 // It's the same across all environments since it's a system agent
-const VSCODE_AGENT_ID = '019d5a01-1001-7001-8001-000000000020';
+const VSCODE_AGENT_ID = '019d5a01-1001-7001-8001-000000000050';
 
 // Environment presets
 const ENVIRONMENTS: Record<string, EnvironmentConfig> = {
